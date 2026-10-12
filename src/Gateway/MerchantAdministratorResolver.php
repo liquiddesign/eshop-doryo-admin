@@ -40,6 +40,7 @@ final class MerchantAdministratorResolver implements IdentityResolver
 
 	/**
 	 * @param string $column Sloupec tabulky administrátorů s vazbou na obchodníka
+	 * @param \Admin\DB\AdministratorRepository<\Admin\DB\Administrator> $administratorRepository
 	 */
 	public function __construct(
 		private ServiceAccountResolver $serviceAccount,

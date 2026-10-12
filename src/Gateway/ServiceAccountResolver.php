@@ -23,6 +23,10 @@ final class ServiceAccountResolver implements IdentityResolver
 	/** Identita se čte jednou: mapa stránek se na ni ptá u každé položky menu. */
 	private ?IIdentity $identity = null;
 
+	/**
+	 * @param string $login Login účtu agenta (`doryoAdmin: administratorLogin:`)
+	 * @param \Admin\DB\AdministratorRepository<\Admin\DB\Administrator> $administratorRepository
+	 */
 	public function __construct(
 		private string $login,
 		private AdministratorRepository $administratorRepository,

@@ -412,7 +412,8 @@ final class PresenterRunner
 			$headers,
 			$method,
 			$original->getRemoteAddress(),
-			$original->getRemoteHost(),
+			// getRemoteHost() by dělal reverzní DNS dotaz; kopie si ho dopočítá, až ho někdo bude chtít
+			null,
 			// tělo API požadavku (JSON) není to, co by poslal prohlížeč s formulářem
 			static fn (): ?string => null,
 		);
