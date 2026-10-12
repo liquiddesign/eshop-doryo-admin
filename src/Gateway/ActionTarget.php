@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DoryoAdmin\Gateway;
 
 /**
- * Jeden signál administrace (`handle*`), který smí Doryo spustit.
+ * Jeden signál administrace (`handle*`), který smí agent spustit.
  *
  * Signály musí být ruční seznam: `handle*` metody nenesou popis parametrů ani významu, model
  * si je nemá jak odvodit. Proto je u každého ručně psaný popis a příznak „destruktivní".

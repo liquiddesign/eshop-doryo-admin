@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace DoryoAdmin\Gateway;
 
 /**
- * Jeden formulář administrace, který smí Doryo číst a měnit. Vzniká z konfigurace, ne z kódu —
- * další stránka se přidává řádkem v `config/doryo-api.neon`.
+ * Jeden formulář administrace, který smí agent číst a měnit. Vzniká z konfigurace, ne z kódu —
+ * další stránka se přidává řádkem v sekci `doryoAdmin: forms:`.
  */
 final class FormTarget
 {

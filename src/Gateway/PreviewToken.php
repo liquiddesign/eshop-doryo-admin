@@ -119,7 +119,7 @@ final class PreviewToken
 		$secret = $this->config->getToken();
 
 		if ($secret === null) {
-			throw new ApiException(503, 'API není nastavené', 'Doryo API nemá token, bez něj se náhled nedá podepsat.');
+			throw new ApiException(503, 'API není nastavené', 'API nemá nastavený token (doryoApi.token nebo DORYO_API_TOKEN), bez něj se náhled nedá podepsat.');
 		}
 
 		return Strings::substring(\hash_hmac('sha256', $body, $secret), 0, 32);

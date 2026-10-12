@@ -7,15 +7,21 @@ namespace DoryoAdmin\Gateway;
 use DoryoApi\Http\ApiException;
 
 /**
- * Co smí Doryo v administraci: účet, pod kterým brána jede, a whitelist formulářů, signálů,
+ * Co smí agent v administraci: účet, pod kterým brána jede, a whitelist formulářů, signálů,
  * hromadných úprav a čitelných seznamů.
  *
- * Whitelist je schválně konfigurace, ne kód — další stránka se přidává v `config/doryo-api.neon`
+ * Whitelist je schválně konfigurace, ne kód — další stránka se přidává v sekci `doryoAdmin:`
  * bez zásahu do PHP. Oprávnění se tím neřeší: ta drží role účtu agenta v Administrace → Role,
- * takže whitelist jen říká „tohle Doryo umí popsat", ne „tohle smí".
+ * takže whitelist jen říká „tohle brána umí popsat", ne „tohle smí".
  */
 final class GatewayConfig
 {
+	/**
+	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
+	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
+	 */
+	public const VERSION = '0.1.0';
+
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];
 
@@ -33,7 +39,7 @@ final class GatewayConfig
 	 * @param array<array<string, mixed>> $forms
 	 * @param array<array<string, mixed>> $actions
 	 * @param array<array<string, mixed>> $bulk
-	 * @param array<array<string, mixed>> $grids Seznamy administrace, které smí Doryo číst
+	 * @param array<array<string, mixed>> $grids Seznamy administrace, které smí agent číst
 	 * @param int $previewTokenLifetime Platnost náhledového tokenu v sekundách
 	 * @param int $bulkConfirmFrom Výchozí práh, od kolika cílů chce hromadná úprava potvrzení
 	 */
@@ -106,6 +112,23 @@ final class GatewayConfig
 			);
 
 			$this->grids[self::key($target->presenter, $target->grid)] = $target;
+		}
+	}
+
+	/**
+	 * Verze balíku (vrací ji mapa stránek) — z nainstalovaného tagu, ne z konstanty, kterou by bylo
+	 * potřeba při každém vydání ručně přepsat.
+	 */
+	public static function version(): string
+	{
+		if (!\class_exists(\Composer\InstalledVersions::class)) {
+			return self::VERSION;
+		}
+
+		try {
+			return \ltrim(\Composer\InstalledVersions::getPrettyVersion('liquiddesign/eshop-doryo-admin') ?? self::VERSION, 'v');
+		} catch (\Throwable) {
+			return self::VERSION;
 		}
 	}
 

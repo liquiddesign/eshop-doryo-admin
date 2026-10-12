@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DoryoAdmin\Gateway;
 
 /**
- * Jeden seznam (grid) administrace, který smí Doryo číst.
+ * Jeden seznam (grid) administrace, který smí agent číst.
  *
  * Whitelist kvůli popisu, ne kvůli oprávnění: to drží role účtu agenta. Model potřebuje vědět,
  * co v seznamu je a k čemu je („reporty obchodníků čekající na schválení"), a to z gridu samotného

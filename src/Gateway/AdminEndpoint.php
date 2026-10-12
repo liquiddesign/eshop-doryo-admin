@@ -14,11 +14,12 @@ use DoryoApi\OpenApi\SpecificationPart;
 /**
  * Zápis do e-shopu přes administraci: mapa stránek, schéma a zápis formuláře, spuštění akce.
  *
- * Cesty jsou schválně generické — tři endpointy místo desítek ručně psaných per doména. Výjimkou
- * jsou importy z K2: to nejsou formuláře ani signály (tlačítko přesměruje na veřejnou URL importu),
- * takže mají vlastní dvě cesty ({@see K2ImportGateway}). Popis
+ * Cesty jsou schválně generické — pět cest místo desítek ručně psaných per doména. Popis
  * konkrétního formuláře si model tahá až na dotaz, což přesně sedí na to, jak s API pracuje
- * konektor v Doryo: introspect, najdi endpoint, přečti detail, zavolej.
+ * konektor v Kolegovi: introspect, najdi endpoint, přečti detail, zavolej.
+ *
+ * Co je jen projektu (vlastní importy, kontroly, domény), do brány nepatří: projekt si přidá
+ * vlastní endpoint přes `doryoApi: endpoints:` a do mapy stránek ho zapíše přes {@see PageDescriber}.
  */
 final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 {
@@ -27,17 +28,12 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	private const ROUTE_ACTIONS = 'v1/admin/actions/{presenter}/{signal}';
 	private const ROUTE_BULK = 'v1/admin/bulk/{presenter}/{grid}';
 	private const ROUTE_GRIDS = 'v1/admin/grids/{presenter}/{grid}';
-	private const ROUTE_K2_IMPORTS = 'v1/admin/k2/imports';
-	private const ROUTE_K2_REIMPORT = 'v1/admin/k2/reimport/{kind}';
-	private const ROUTE_K2_PRICES = 'v1/admin/k2/prices';
 
 	public function __construct(
 		private PageMap $pageMap,
 		private FormGateway $formGateway,
 		private ActionGateway $actionGateway,
 		private BulkGateway $bulkGateway,
-		private K2ImportGateway $k2ImportGateway,
-		private K2PriceGateway $k2PriceGateway,
 		private GridGateway $gridGateway,
 		private GatewayConfig $config,
 	) {
@@ -54,9 +50,6 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 			self::ROUTE_ACTIONS => 'action',
 			self::ROUTE_BULK => 'bulk',
 			self::ROUTE_GRIDS => 'grid',
-			self::ROUTE_K2_IMPORTS => 'k2Imports',
-			self::ROUTE_K2_REIMPORT => 'k2Reimport',
-			self::ROUTE_K2_PRICES => 'k2Prices',
 		];
 	}
 
@@ -70,9 +63,6 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 			self::ROUTE_ACTIONS => ['POST'],
 			self::ROUTE_BULK => ['GET', 'HEAD', 'POST'],
 			self::ROUTE_GRIDS => ['GET', 'HEAD'],
-			self::ROUTE_K2_IMPORTS => ['GET', 'HEAD'],
-			self::ROUTE_K2_REIMPORT => ['POST'],
-			self::ROUTE_K2_PRICES => ['GET', 'HEAD'],
 		];
 	}
 
@@ -152,34 +142,6 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	}
 
 	/**
-	 * @param array<string, string> $params
-	 */
-	public function k2Imports(array $params, Query $query): Response
-	{
-		unset($params);
-
-		return new Response($this->k2ImportGateway->status($query->string('target'), $query->string('type')));
-	}
-
-	/**
-	 * @param array<string, string> $params
-	 */
-	public function k2Reimport(array $params, Query $query): Response
-	{
-		return new Response($this->k2ImportGateway->reimport($params['kind'], $query->getBody() ?? []));
-	}
-
-	/**
-	 * @param array<string, string> $params
-	 */
-	public function k2Prices(array $params, Query $query): Response
-	{
-		unset($params);
-
-		return new Response($this->k2PriceGateway->check((string) $query->string('customer'), (string) $query->string('product')));
-	}
-
-	/**
 	 * @inheritDoc
 	 */
 	public function getOpenApiPaths(): array
@@ -188,7 +150,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 			'/v1/admin/pages' => [
 				'get' => [
 					'summary' => 'Mapa administrace',
-					'description' => 'Stránky administrace, na které smí účet Doryo, a u nich formuláře '
+					'description' => 'Stránky administrace, na které smí účet agenta, a u nich formuláře '
 						. 'a akce, které jde přes API použít. Odsud se vychází — jméno presenteru a formuláře '
 						. 'z téhle odpovědi se dosazuje do ostatních cest.',
 					'responses' => ['200' => ['description' => 'OK']],
@@ -378,83 +340,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'responses' => [
 						'200' => ['description' => 'Stránka seznamu: total, pageCount, hasMore, columns, rows [{id, cells}], filters, orderable'],
 						'400' => ['description' => 'Neznámý filtr, vadný JSON ve „filter" nebo neznámé řazení'],
-						'403' => ['description' => 'Účet Doryo nesmí na stránku seznamu'],
+						'403' => ['description' => 'Účet agenta nesmí na stránku seznamu'],
 						'404' => ['description' => 'Seznam brána číst neumí'],
-					],
-				],
-			],
-			'/v1/admin/k2/imports' => [
-				'get' => [
-					'summary' => 'Stav importů z K2',
-					'description' => 'Poslední běh každého importu z K2 (zákazníci, produkty, ceníky, sklad, faktury…): stav, '
-						. 'kdy začal a skončil, kdo ho spustil a konec zprávy. S „target" historie jednoho kódu, s „type" '
-						. 'historie jednoho typu. Tady se začíná, když na B2B nesedí hodnota nastavená v K2 — nejdřív zjisti, '
-						. 'jestli import doběhl.',
-					'parameters' => [
-						['name' => 'target', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
-							'description' => 'Kód zákazníka (Z000123) nebo produktu (12345.01) v K2 — historie jeho jednotlivých importů.'],
-						['name' => 'type', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
-							'description' => 'Typ importu (k2Customers, k2AllPricelists, k2StoreAmounts…) — historie jeho běhů.'],
-					],
-					'responses' => ['200' => ['description' => 'OK'], '403' => ['description' => 'Účet nesmí na stránku Importy z K2']],
-				],
-			],
-			'/v1/admin/k2/prices' => [
-				'get' => [
-					'summary' => 'Proč zákazník vidí na produktu tuhle cenu (kontrola ceny proti importu z K2)',
-					'description' => 'Ceníky zákazníka s cenou produktu v každém z nich, který ceník podle pravidla e-shopu '
-						. 'vyhrává (nižší priorita, pak nižší cena; akční ceníky mají přednost), ceníky přiřazené, ale nepočítané '
-						. '(jiná měna, neaktivní), a stav importu cen z K2 — jestli dnes přišel ZIP a jestli se ceny opravdu '
-						. 'nahrály. Živou cenu z K2 neobsahuje (dotaz do K2 trvá ~50 s) — viz „k2Live". Jen čtení.',
-					'parameters' => [
-						['name' => 'customer', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string'],
-							'description' => 'Id zákazníka, číslo z K2 nebo IČ (u IČ s pobočkami vrátí 400 se seznamem).'],
-						['name' => 'product', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string'],
-							'description' => 'Kód produktu z K2 (např. 17014.01) nebo id produktu.'],
-					],
-					'responses' => [
-						'200' => ['description' => 'customer, product, winner, pricelists, import, hints, k2Live'],
-						'400' => ['description' => 'Chybí zákazník nebo produkt, nebo IČ patří víc zákazníkům'],
-						'403' => ['description' => 'Účet Doryo nesmí na stránku Ceníky'],
-						'404' => ['description' => 'Zákazník nebo produkt v e-shopu není'],
-					],
-				],
-			],
-			'/v1/admin/k2/reimport/{kind}' => [
-				'post' => [
-					'summary' => 'Znovu naimportovat jednoho zákazníka nebo produkt z K2 (destruktivní)',
-					'description' => 'Tentýž import jako tlačítko na stránce Nastavení → Importy z K2. Záznam PŘEPÍŠE hodnotami '
-						. 'z K2 a u zákazníka umí založit e-shopové účty s e-mailem s heslem na zákazníka, přesunout účet '
-						. 'od jiného zákazníka a účty smazat. Postup: 1) "dryRun": true — náhled sáhne do K2 a vrátí, co se '
-						. 'přepíše, co se stane s účty („accounts"), komu odejde e-mail a previewToken; 2) náhled ukaž '
-						. 'uživateli a POČKEJ na jeho výslovné „ano" v konverzaci — souhlas s nástrojem nestačí; 3) teprve pak '
-						. 'totéž s "dryRun": false, "confirm": true a tokenem. Když K2 neodpovídá, náhled nevznikne a reimport '
-						. 'se nespustí. Kompletní import přes API spustit nejde.',
-					'parameters' => [self::pathParam('kind', '„customer" nebo „product".')],
-					'requestBody' => [
-						'required' => true,
-						'content' => ['application/json' => [
-							'schema' => [
-								'type' => 'object',
-								'required' => ['code'],
-								'properties' => [
-									'code' => ['type' => 'string', 'description' => 'Kód v K2: zákazník Z000123, produkt 12345.01.'],
-									'dryRun' => ['type' => 'boolean', 'description' => 'true = jen náhled, nic se nespustí.'],
-									'previewToken' => ['type' => 'string', 'description' => 'Token z náhledu; u ostrého běhu povinný.'],
-									'confirm' => ['type' => 'boolean', 'description' => 'U ostrého běhu povinné true — vždy.'],
-									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se import spouští; jde do logu běhů a auditu.'],
-								],
-							],
-							'example' => ['code' => 'Z000123', 'dryRun' => true, 'actor' => 'Jan Novák'],
-						]],
-					],
-					'responses' => [
-						'200' => ['description' => 'Náhled (dryRun), nebo proběhlý import — „ok": false znamená, že import nedoběhl'],
-						'400' => ['description' => 'Chybí nebo je vadný kód, nebo u ostrého běhu chybí "confirm": true'],
-						'403' => ['description' => 'Účet nemá na stránce Importy z K2 plný přístup (777)'],
-						'404' => ['description' => 'Záznam v K2 není (mezi aktivními odběrateli / zbožními položkami)'],
-						'409' => ['description' => 'Chybí previewToken, vypršel, nebo se K2 či e-shop od náhledu změnily'],
-						'502' => ['description' => 'K2 neodpovědělo — náhled ani reimport nejde'],
 					],
 				],
 			],

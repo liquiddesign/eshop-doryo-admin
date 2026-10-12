@@ -16,10 +16,14 @@ use Admin\Controls\MenuItem;
  */
 final class PageMap
 {
+	/**
+	 * @param array<\DoryoAdmin\Gateway\PageDescriber> $describers Projektové doplňky řádků stránek
+	 */
 	public function __construct(
 		private IMenuFactory $menuFactory,
 		private PresenterRunner $runner,
 		private GatewayConfig $config,
+		private array $describers = [],
 	) {
 	}
 
@@ -44,9 +48,10 @@ final class PageMap
 
 		return [
 			'items' => $items,
-			'note' => 'Vypisují se jen stránky, na které smí účet Doryo. Měnit jde zatím to, co má '
-				. 'vyplněné „forms", „actions", „bulk" nebo „k2Imports", číst jde, co má „grids"; u ostatních stránek brána zatím jen ví, že existují. '
-				. 'Formulář s „create": true umí i zakládat nový záznam — přečti si u něj „createNote".',
+			'note' => 'Vypisují se jen stránky, na které smí účet agenta. Měnit jde to, co má vyplněné „forms", '
+				. '„actions" nebo „bulk", číst jde, co má „grids"; další klíče u stránky jsou cesty projektu. U ostatních '
+				. 'stránek brána jen ví, že existují. Formulář s „create": true umí i zakládat nový záznam — přečti si '
+				. 'u něj „createNote".',
 		];
 	}
 
@@ -122,15 +127,8 @@ final class PageMap
 			];
 		}
 
-		if ($presenter === K2ImportGateway::PRESENTER) {
-			$row['k2Imports'] = [
-				'status' => 'GET /v1/admin/k2/imports — poslední běh každého importu; ?target=<kód> historie jednoho zákazníka nebo produktu',
-				'reimport' => 'POST /v1/admin/k2/reimport/{customer|product} — znovu naimportovat jeden záznam z K2',
-				'prices' => 'GET /v1/admin/k2/prices?customer=<id|kód|IČ>&product=<kód> — proč zákazník vidí na produktu tuhle cenu a jestli se ceny z K2 nahrály',
-				'destructive' => true,
-				'note' => 'Reimport přepíše záznam hodnotami z K2 a u zákazníka umí založit účty (e-mail s heslem na zákazníka) '
-					. 'i účty smazat. Vždy nejdřív náhled a výslovné „ano" uživatele v konverzaci.',
-			];
+		foreach ($this->describers as $describer) {
+			$row = $describer->describe($presenter, $row);
 		}
 
 		return $row;

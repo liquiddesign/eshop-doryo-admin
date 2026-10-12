@@ -28,7 +28,7 @@ use StORM\Entity;
  * a bez driftu, když někdo formulář změní.
  *
  * Zápis je vždycky na dvě kola: `dryRun` jen validuje a spočítá diff, ostrý zápis chce
- * {@see PreviewToken} z toho náhledu. Viz `docs/doryo-api-zapis.md`.
+ * {@see PreviewToken} z toho náhledu. Postup popisuje README balíku.
  */
 final class FormGateway
 {

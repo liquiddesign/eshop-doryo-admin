@@ -1,0 +1,13 @@
+includes:
+	- vendor/phpstan/phpstan-nette/extension.neon
+
+parameters:
+	level: 6
+	paths:
+		- src
+	# StORM staví kolekce dynamicky, návratové typy repozitářů phpstan nedohlédne.
+	# Hlášení nepoužitých vzorů je vypnuté schválně: co phpstan pozná, se liší podle verze
+	# adminu, gridu a StORMu, takže vzor tu má být i ve chvíli, kdy zrovna na nic nesedí.
+	reportUnmatchedIgnoredErrors: false
+	ignoreErrors:
+		- '#Cannot access property [^ ]+ on object#'

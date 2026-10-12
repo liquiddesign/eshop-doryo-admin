@@ -25,7 +25,7 @@ use StORM\Meta\RelationNxN;
  * Brána nad „Hromadnou úpravou" gridu administrace.
  *
  * Hromadná úprava je jediné místo, kde admin umí sáhnout na desítky záznamů najednou, a přesně
- * to Levior po Doryu chce („přidej těmhle zákazníkům ceník"). Stejně jako u formulářů se nic
+ * to Levior po agentovi chtěl jako první („přidej těmhle zákazníkům ceník"). Stejně jako u formulářů se nic
  * nekopíruje: cílem je komponenta `bulkForm` gridu, spouští se normální cestou a platí její
  * sémantika včetně té nečekané.
  *
@@ -289,7 +289,7 @@ final class BulkGateway
 
 			if (!$control instanceof BaseControl || $control instanceof Button || $control instanceof HiddenField) {
 				throw ApiException::badRequest(\sprintf(
-					'Pole „%s" hromadná úprava nenabízí. Buď ho nemá vůbec, nebo ho účtu Doryo nenabízí kvůli '
+					'Pole „%s" hromadná úprava nenabízí. Buď ho nemá vůbec, nebo ho účtu agenta nenabízí kvůli '
 						. 'chybějícímu „Plnému přístupu" (777) na téhle stránce. Seznam vrátí GET %s.',
 					$name,
 					$target->getEndpoint(),

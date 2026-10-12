@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DoryoAdmin\Gateway;
 
 /**
- * Jeden grid administrace, jehož „Hromadnou úpravu" smí Doryo použít.
+ * Jeden grid administrace, jehož „Hromadnou úpravu" smí agent použít.
  *
  * Stejně jako u formulářů je to konfigurace, ne kód. Navíc proti formuláři nese entitu (bez ní
  * se nedá poznat, které pole je vztah N:N, a tedy jestli se dá přidávat) a práh, nad kterým chce

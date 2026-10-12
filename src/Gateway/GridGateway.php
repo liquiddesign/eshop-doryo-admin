@@ -57,7 +57,7 @@ final class GridGateway
 		return $this->runner->withAdministrator(function () use ($target, $filter, $page, $pageSize, $order, $id, $tab): array {
 			if (!$this->runner->isAllowed($target->getResource())) {
 				throw ApiException::forbidden(\sprintf(
-					'Účet Doryo nesmí na stránku „%s". Oprávnění se nastavují v Administrace → Role.',
+					'Účet agenta nesmí na stránku „%s". Oprávnění se nastavují v Administrace → Role.',
 					$target->label,
 				));
 			}
