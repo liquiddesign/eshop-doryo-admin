@@ -68,7 +68,7 @@ final class BulkGateway
 	public function schema(BulkTarget $target): array
 	{
 		return $this->runner->withAdministrator(function () use ($target): array {
-			$run = $this->runner->run($target->presenter, self::params($target));
+			$run = $this->runner->open($target->presenter, self::params($target));
 			$grid = self::grid($run->presenter, $target);
 			$form = self::bulkForm($grid, $target);
 			$inputs = $this->describeInputs($target, $form);
@@ -126,7 +126,7 @@ final class BulkGateway
 			// stránku smí. Přes API je to málo.
 			$this->runner->assertManager($target->getResource(), $target->label);
 
-			$run = $this->runner->run($target->presenter, self::params($target, $given, $filter));
+			$run = $this->runner->open($target->presenter, self::params($target, $given, $filter));
 			$grid = self::grid($run->presenter, $target);
 			$form = self::bulkForm($grid, $target);
 

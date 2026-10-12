@@ -71,13 +71,17 @@ final class FormReader
 
 	/**
 	 * Aktuální hodnoty všech polí, normalizované tak, aby se daly porovnávat i podepsat.
+	 *
+	 * Pole se procházejí přes `getControls()` (rekurzivně i kontejnery), ne přes
+	 * `getComponents(true, …)`: component-model 3.2 má `getComponents()` bez parametrů a hloubku
+	 * drží jen kvůli zpětné kompatibilitě.
 	 * @return array<string, mixed>
 	 */
 	public static function values(Form $form): array
 	{
 		$values = [];
 
-		foreach ($form->getComponents(true, BaseControl::class) as $control) {
+		foreach ($form->getControls() as $control) {
 			if (!$control instanceof BaseControl || $control instanceof Button) {
 				continue;
 			}
@@ -96,7 +100,7 @@ final class FormReader
 	{
 		$controls = [];
 
-		foreach ($form->getComponents(true, BaseControl::class) as $control) {
+		foreach ($form->getControls() as $control) {
 			if (!$control instanceof BaseControl || self::skip($control)) {
 				continue;
 			}

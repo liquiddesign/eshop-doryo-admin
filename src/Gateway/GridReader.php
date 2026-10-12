@@ -92,10 +92,20 @@ final class GridReader
 	/**
 	 * Sloupce, které nesou data: bez výběrových zaškrtávátek, bez editovatelných vstupů a bez
 	 * sloupců bez hlavičky (tlačítka „upravit", „smazat").
+	 *
+	 * `Datagrid::$columns` je protected a getter nemá ani liquiddesign/grid 1.0 (ověřeno na 1.0.13
+	 * a 1.0.14), jediná veřejná cesta je událost `onRender` — ta ale běží až při vykreslení. Proto
+	 * reflexe; při aktualizaci gridu je potřeba ji zkontrolovat, chybějící vlastnost je 500.
 	 * @return array<string, \Grid\Column> Hlavička => sloupec
+	 * @throws \DoryoApi\Http\ApiException
 	 */
 	public static function dataColumns(Datagrid $grid): array
 	{
+		if (!\property_exists(Datagrid::class, 'columns')) {
+			throw new ApiException(500, 'Chyba serveru', 'Grid nemá vlastnost $columns, sloupce nejde přečíst '
+				. '(změnil se liquiddesign/grid). Nahlas to vývojářům.');
+		}
+
 		$property = new \ReflectionProperty(Datagrid::class, 'columns');
 		/** @var array<\Grid\Column> $columns */
 		$columns = $property->getValue($grid);
@@ -195,7 +205,7 @@ final class GridReader
 			return $controls;
 		}
 
-		foreach ($form->getComponents(true, BaseControl::class) as $control) {
+		foreach ($form->getControls() as $control) {
 			if (!$control instanceof BaseControl || $control instanceof Button || $control instanceof HiddenField) {
 				continue;
 			}

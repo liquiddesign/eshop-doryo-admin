@@ -15,7 +15,6 @@ use Nette\Forms\Controls\MultiChoiceControl;
 use Nette\Forms\Controls\SubmitButton;
 use Nette\Forms\Controls\UploadControl;
 use Nette\Forms\Form;
-use Nette\Utils\Arrays;
 use Nette\Utils\Strings;
 use StORM\DIConnection;
 use StORM\Entity;
@@ -233,7 +232,7 @@ final class FormGateway
 
 		// Validaci formulář prošel, ale `onSuccess` mohl zápis odmítnout sám — typicky „Produkt nebyl nalezen"
 		// jako varování a přesměrování. Formulář pak vypadá odeslaný a bez chyb, jenže nic neuložil.
-		$refusals = \array_values(\array_filter($run->flashes, static fn (array $flash): bool => Arrays::contains(['error', 'danger', 'warning'], $flash['type'])));
+		$refusals = $run->getRefusals();
 
 		if ($refusals) {
 			throw new ApiException(422, 'Zápis odmítnut', \sprintf(
@@ -312,7 +311,7 @@ final class FormGateway
 	 */
 	private function open(FormTarget $target, string $id): Form
 	{
-		$run = $this->runner->run($target->presenter, ['action' => $target->action, $target->parameter => $id]);
+		$run = $this->runner->open($target->presenter, ['action' => $target->action, $target->parameter => $id]);
 
 		return self::component($run->presenter, $target->form);
 	}
@@ -329,7 +328,7 @@ final class FormGateway
 	 */
 	private function openNew(FormTarget $target, ?string $id): Form
 	{
-		$run = $this->runner->run($target->presenter, ['action' => $target->createAction]);
+		$run = $this->runner->open($target->presenter, ['action' => $target->createAction]);
 		$form = self::component($run->presenter, $target->form);
 
 		if ($id !== null) {
@@ -556,7 +555,7 @@ final class FormGateway
 	{
 		$errors = [];
 
-		foreach ($form->getComponents(true, BaseControl::class) as $control) {
+		foreach ($form->getControls() as $control) {
 			if (!$control instanceof BaseControl) {
 				continue;
 			}
@@ -587,7 +586,7 @@ final class FormGateway
 	{
 		$post = [];
 
-		foreach ($form->getComponents(true, BaseControl::class) as $control) {
+		foreach ($form->getControls() as $control) {
 			if (!$control instanceof BaseControl || $control->isDisabled()) {
 				continue;
 			}
@@ -631,8 +630,8 @@ final class FormGateway
 		}
 
 		// prohlížeč pošle jméno stisknutého tlačítka; podle něj se pozná, kam se po uložení jde
-		foreach ($form->getComponents(false, SubmitButton::class) as $button) {
-			if ($button->getName() !== 'submit') {
+		foreach ($form->getComponents() as $button) {
+			if (!$button instanceof SubmitButton || $button->getName() !== 'submit') {
 				continue;
 			}
 
@@ -644,7 +643,8 @@ final class FormGateway
 
 	/**
 	 * Název souboru, který výběr obrázku / souboru právě drží (nastavuje ho `setDefaults()` ze záznamu).
-	 * Getter controly nemají, proto reflexe; obyčejné Nette `UploadControl` žádný název nedrží.
+	 * Getter controly nemají ani v liquiddesign/forms 3.0 (`protected ?string $filename`, ověřeno
+	 * na 3.0.12 a 3.0.23), proto reflexe; obyčejné Nette `UploadControl` žádný název nedrží.
 	 */
 	private static function currentUpload(UploadControl $control): ?string
 	{

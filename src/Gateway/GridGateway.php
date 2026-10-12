@@ -81,7 +81,7 @@ final class GridGateway
 				$params[$target->grid . '-' . $name] = $value;
 			}
 
-			$run = $this->runner->run($target->presenter, $params);
+			$run = $this->runner->open($target->presenter, $params);
 			$grid = $run->presenter->getComponent($target->grid, false);
 
 			if (!$grid instanceof AdminGrid) {
