@@ -130,15 +130,6 @@ final class PresenterRunner
 	}
 
 	/**
-	 * Jméno člověka z těla požadavku (`actor`), jen jako popisek do auditu.
-	 * @param array<mixed> $body
-	 */
-	public static function actor(array $body): ?string
-	{
-		return isset($body['actor']) && \is_scalar($body['actor']) ? (string) $body['actor'] : null;
-	}
-
-	/**
 	 * Přihlásí identitu požadavku, pustí nad ní práci a zase ji odhlásí.
 	 *
 	 * Identita se nastavuje programově: požadavek od agenta nemá cookie, ale `checkRequirements()`
@@ -283,6 +274,15 @@ final class PresenterRunner
 		}
 
 		return $run;
+	}
+
+	/**
+	 * Jméno člověka z těla požadavku (`actor`), jen jako popisek do auditu.
+	 * @param array<mixed> $body
+	 */
+	public static function actor(array $body): ?string
+	{
+		return isset($body['actor']) && \is_scalar($body['actor']) ? (string) $body['actor'] : null;
 	}
 
 	/**

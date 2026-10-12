@@ -117,23 +117,6 @@ final class GatewayConfig
 		}
 	}
 
-	/**
-	 * Verze balíku (vrací ji mapa stránek) — z nainstalovaného tagu, ne z konstanty, kterou by bylo
-	 * potřeba při každém vydání ručně přepsat.
-	 */
-	public static function version(): string
-	{
-		if (!\class_exists(\Composer\InstalledVersions::class)) {
-			return self::VERSION;
-		}
-
-		try {
-			return \ltrim(\Composer\InstalledVersions::getPrettyVersion('liquiddesign/eshop-doryo-admin') ?? self::VERSION, 'v');
-		} catch (\Throwable) {
-			return self::VERSION;
-		}
-	}
-
 	public function getAdministratorLogin(): string
 	{
 		return $this->administratorLogin;
@@ -238,6 +221,23 @@ final class GatewayConfig
 			'bulks' => \array_values(\array_filter($this->bulks, static fn (BulkTarget $t): bool => $t->presenter === $presenter)),
 			'grids' => \array_values(\array_filter($this->grids, static fn (GridTarget $t): bool => $t->presenter === $presenter)),
 		];
+	}
+
+	/**
+	 * Verze balíku (vrací ji mapa stránek) — z nainstalovaného tagu, ne z konstanty, kterou by bylo
+	 * potřeba při každém vydání ručně přepsat.
+	 */
+	public static function version(): string
+	{
+		if (!\class_exists(\Composer\InstalledVersions::class)) {
+			return self::VERSION;
+		}
+
+		try {
+			return \ltrim(\Composer\InstalledVersions::getPrettyVersion('liquiddesign/eshop-doryo-admin') ?? self::VERSION, 'v');
+		} catch (\Throwable) {
+			return self::VERSION;
+		}
 	}
 
 	private static function key(string $presenter, string $name): string

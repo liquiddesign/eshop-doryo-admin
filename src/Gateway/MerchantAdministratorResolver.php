@@ -53,6 +53,20 @@ final class MerchantAdministratorResolver implements IdentityResolver
 	}
 
 	/**
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	public function resolve(Query $query): IIdentity
+	{
+		$merchantId = self::requestedMerchant($query, $this->httpRequest);
+
+		if ($merchantId === null) {
+			return $this->serviceAccount->account();
+		}
+
+		return $this->resolved[$merchantId] ??= $this->forMerchant($merchantId);
+	}
+
+	/**
 	 * Obchodník, za kterého požadavek jedná, nebo null.
 	 *
 	 * Hlavička může přijít víckrát a proxy ji pak spojí čárkou — platí první hodnota. Když požadavek
@@ -84,20 +98,6 @@ final class MerchantAdministratorResolver implements IdentityResolver
 		}
 
 		return $given[0] ?? null;
-	}
-
-	/**
-	 * @throws \DoryoApi\Http\ApiException
-	 */
-	public function resolve(Query $query): IIdentity
-	{
-		$merchantId = self::requestedMerchant($query, $this->httpRequest);
-
-		if ($merchantId === null) {
-			return $this->serviceAccount->account();
-		}
-
-		return $this->resolved[$merchantId] ??= $this->forMerchant($merchantId);
 	}
 
 	/**
