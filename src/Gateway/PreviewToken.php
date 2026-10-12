@@ -69,9 +69,18 @@ final class PreviewToken
 	 * @param array<string, mixed> $changes
 	 * @param array<string, mixed> $state
 	 * @param string|null $idMismatch Vysvětlení pro případ, kdy „záznam" není jeden řádek; u hromadné úpravy je otiskem celé cílové množiny
+	 * @param string|null $stateMismatch Vysvětlení změněného stavu, když stav není jeden záznam (hromadná úprava)
 	 * @throws \DoryoApi\Http\ApiException
 	 */
-	public function verify(?string $token, string $scope, string $id, array $changes, array $state, ?string $idMismatch = null): void
+	public function verify(
+		?string $token,
+		string $scope,
+		string $id,
+		array $changes,
+		array $state,
+		?string $idMismatch = null,
+		?string $stateMismatch = null,
+	): void
 	{
 		if ($token === null || $token === '') {
 			throw new ApiException(409, 'Chybí náhled', 'Ostrý zápis potřebuje previewToken. Zavolej nejdřív totéž '
@@ -119,8 +128,9 @@ final class PreviewToken
 		}
 
 		if (($payload['r'] ?? null) !== self::hash($state)) {
-			throw new ApiException(409, 'Záznam se mezitím změnil', 'Od náhledu se záznam změnil — mohl ho upravit někdo '
-				. 'v administraci. Zopakuj dotaz s "dryRun": true, ukaž nový diff a zapiš znovu.');
+			throw new ApiException(409, $stateMismatch !== null ? 'Záznamy se mezitím změnily' : 'Záznam se mezitím změnil', $stateMismatch
+				?? 'Od náhledu se záznam změnil — mohl ho upravit někdo v administraci. Zopakuj dotaz s "dryRun": true, '
+					. 'ukaž nový diff a zapiš znovu.');
 		}
 	}
 

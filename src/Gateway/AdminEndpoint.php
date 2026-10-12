@@ -270,9 +270,9 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 								'warnings' => ['Pole „Ceníky" jsou pro tuhle roli jen ke čtení; pokus o jejich změnu skončí chybou 403.'],
 							]]],
 						],
-						'403' => ['description' => 'Role nesmí měnit některé z poslaných polí'],
+						'403' => ['description' => 'Role nesmí měnit některé z poslaných polí, nebo administrace záznam neotevřela (účet ho nevidí)'],
 						'409' => ['description' => 'Chybí previewToken, vypršel, nebo se záznam mezitím změnil'],
-						'422' => ['description' => 'Formulář neprošel validací'],
+						'422' => ['description' => 'Formulář neprošel validací, nebo uložení administrace odmítla'],
 					],
 				],
 			],
@@ -327,8 +327,9 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 								'expiresAt' => '2026-09-11T14:32:00+02:00',
 							]]],
 						],
-						'403' => ['description' => 'Role nemá na té stránce plný přístup'],
+						'403' => ['description' => 'Role nemá na té stránce plný přístup, nebo administrace záznam neotevřela (účet ho nevidí)'],
 						'409' => ['description' => 'Chybí previewToken, vypršel, nebo se záznam mezitím změnil'],
+						'422' => ['description' => 'Administrace akci odmítla (flash zpráva chyba/varování) — nic se neprovedlo'],
 					],
 				],
 			],
@@ -366,10 +367,10 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 			'/v1/admin/bulk/{presenter}/{grid}' => [
 				'get' => [
 					'summary' => 'Co umí hromadná úprava gridu',
-					'description' => 'Vstupy hromadné úpravy i s režimy („add" přidá k tomu, co záznam má, '
-						. '„replace" původní vazby zahodí a nastaví poslané, „set" nastaví obyčejné pole), '
-						. 'filtry, podle kterých jde vybrat cíle, a práh, od kterého ostrý zápis chce potvrzení. '
-						. 'Co role bez „Plného přístupu" (777) nesmí, se v seznamu vůbec neobjeví.',
+					'description' => 'Vstupy hromadné úpravy i s režimy, které u nich administrace nabízí („add" přidá '
+						. 'k tomu, co záznam má, „remove" odebere, „replace" původní vazby zahodí a nastaví poslané, „set" '
+						. 'nastaví obyčejné pole), filtry, podle kterých jde vybrat cíle, a práh, od kterého ostrý zápis chce '
+						. 'potvrzení. Co role bez „Plného přístupu" (777) nesmí, se v seznamu vůbec neobjeví.',
 					'parameters' => [
 						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Customer.'),
 						self::pathParam('grid', 'Jméno gridu, například customers.'),
@@ -383,9 +384,10 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 						. 'ne obojí. Nejdřív zavolej s "dryRun": true: vrátí se počet cílů, ukázka záznamů, seznam '
 						. 'změn a previewToken. To ukaž uživateli a teprve pak zapiš s "dryRun": false a tím tokenem. '
 						. 'U filtru se množina spočítá znovu i při zápisu; když se mezitím změnila, je odpověď 409. '
+						. 'Totéž, když se cílům mezitím změnila pole, která se mění (třeba je někdo upravil v administraci). '
 						. 'Je-li cílů víc než "confirmFrom" ze schématu, chce ostrý zápis navíc "confirm": true. '
-						. 'ODEBRAT jednu položku vztahu (jeden ceník z pěti) hromadná úprava neumí — je to 400 '
-						. 'a řeší se buď „replace" s výsledným seznamem, nebo úpravou jednotlivých záznamů.',
+						. 'Režim musí být jeden z „modes" vstupu ve schématu — přidat a odebrat jednu položku jde jen '
+						. 'u vztahu N:N, jinde se posílá „replace" s výsledným seznamem.',
 					'parameters' => [
 						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Customer.'),
 						self::pathParam('grid', 'Jméno gridu, například customers.'),
@@ -411,9 +413,9 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									],
 									'values' => [
 										'type' => 'object',
-										'description' => 'Jméno vstupu => {režim: hodnota}. Režimy: „add" a „replace" '
-											. 'u vztahů N:N (ceníky, ceníky pro export, seznamy viditelnosti), „set" '
-											. 'u obyčejných polí (sleva, fiktivní ceník) — tam se dá poslat i holá hodnota.',
+										'description' => 'Jméno vstupu => {režim: hodnota}. Režimy: „add", „remove" a „replace" '
+											. 'u vztahů N:N (ceníky, seznamy viditelnosti), jen „replace" u ostatních výběrů více '
+											. 'položek, „set" u obyčejných polí (sleva, fiktivní ceník) — tam se dá poslat i holá hodnota.',
 										'additionalProperties' => true,
 									],
 									'dryRun' => ['type' => 'boolean', 'description' => 'true = jen náhled, nic se nezapíše.'],
@@ -429,6 +431,11 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									'values' => ['pricelists' => ['add' => ['id-ceniku']]],
 									'dryRun' => true,
 									'actor' => 'Jan Novák',
+								]],
+								'odeber ceník dvěma zákazníkům' => ['value' => [
+									'ids' => ['Z002462', 'Z002463'],
+									'values' => ['pricelists' => ['remove' => ['id-ceniku']]],
+									'dryRun' => true,
 								]],
 								'nahraď ceníky celého seznamu' => ['value' => [
 									'ids' => ['Z002462'],
@@ -468,9 +475,11 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 								'expiresAt' => '2026-09-11T14:32:00+02:00',
 							]]],
 						],
-						'400' => ['description' => 'Neznámý filtr, pole, které hromadná úprava nenabízí, pokus o „remove", nebo chybějící confirm'],
+						'400' => ['description' => 'Neznámý filtr, filtr bez výsledku, pole, které hromadná úprava nenabízí, režim, který pole nemá, nebo chybějící confirm'],
 						'403' => ['description' => 'Role nemá na té stránce plný přístup (777)'],
-						'409' => ['description' => 'Chybí previewToken, vypršel, nebo se cílová množina mezitím změnila'],
+						'404' => ['description' => 'Některé z „ids" v seznamu není (neexistuje, nebo ho účet nevidí)'],
+						'409' => ['description' => 'Chybí previewToken, vypršel, nebo se cílová množina či její měněná pole mezitím změnily'],
+						'422' => ['description' => 'Hodnota mimo číselník, nebo hromadnou úpravu administrace odmítla'],
 					],
 				],
 			],

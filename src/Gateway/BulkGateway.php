@@ -14,11 +14,13 @@ use Nette\Forms\Controls\Button;
 use Nette\Forms\Controls\Checkbox;
 use Nette\Forms\Controls\HiddenField;
 use Nette\Forms\Controls\MultiSelectBox;
+use Nette\Forms\Controls\SelectBox;
 use Nette\Forms\Form;
 use Nette\Utils\Arrays;
 use Nette\Utils\Strings;
 use StORM\DIConnection;
 use StORM\Entity;
+use StORM\Meta\Column;
 use StORM\Meta\RelationNxN;
 
 /**
@@ -29,16 +31,21 @@ use StORM\Meta\RelationNxN;
  * nekopíruje: cílem je komponenta `bulkForm` gridu, spouští se normální cestou a platí její
  * sémantika včetně té nečekané.
  *
- * Sémantika vychází z {@see \Admin\Controls\AdminGrid::createComponentBulkForm()} a je pro model
- * nejdůležitější věc na celém endpointu:
+ * Sémantika vychází z {@see \Admin\Controls\AdminGrid::createComponentBulkForm()} (liquiddesign/admin
+ * 2.1) a je pro model nejdůležitější věc na celém endpointu. U každého vstupu je v kontejneru `keep`
+ * volba, co s hodnotou udělat:
  *
- * - **`add`** = zaškrtnuté „Původní" plus hodnota. U vztahu N:N (ceníky, ceníky pro export,
- *   seznamy viditelnosti) se hodnota **přidá** k tomu, co zákazník má.
- * - **`replace`** = odškrtnuté „Původní" plus hodnota: stávající vazby se **zahodí** a nastaví
- *   se poslané.
- * - **`set`** = totéž pro obyčejná pole (sleva, fiktivní ceník).
- * - **odebrat jednu položku vztahu admin neumí** — a brána si to nedomýšlí, protože by to byla
- *   jiná operace než ta, kterou dělá člověk.
+ * - u výběru více položek (`MultiSelectBox`) je to select „Původní / Nahradit / Přidat / Odebrat".
+ *   U vztahu N:N (ceníky, seznamy viditelnosti) **`add`** hodnotu **přidá** k tomu, co záznam má,
+ *   **`remove`** ji **odebere** a **`replace`** stávající vazby zahodí a nastaví poslané. U výběru,
+ *   který vztahem N:N není, admin přidat ani odebrat neumí (hodnotu by stejně nahradil), takže
+ *   brána nabízí jen `replace`;
+ * - u ostatních polí je to zaškrtávátko „Původní": odškrtnuté + hodnota = **`set`** (sleva,
+ *   fiktivní ceník) nastaví hodnotu všem cílům.
+ *
+ * Starší admin (Levior) měl u všech vstupů jen zaškrtávátko a „přidat" bylo zaškrtnuté „Původní"
+ * plus hodnota; odebrat jednu položku neuměl. Admin 2.1 to má jinak — brána proto čte, jaký prvek
+ * `keep` u vstupu je, a nabízí jen režimy, které ten prvek skutečně umí.
  */
 final class BulkGateway
 {
@@ -47,7 +54,11 @@ final class BulkGateway
 
 	private const MODE_ADD = 'add';
 	private const MODE_REPLACE = 'replace';
+	private const MODE_REMOVE = 'remove';
 	private const MODE_SET = 'set';
+
+	/** Volba selectu „Původní" — vstup se nemění. */
+	private const KEEP_NONE = 'none';
 
 	/** Jméno tlačítka, kterým se hromadná úprava odesílá; podle něj se pozná, kam se po uložení jde. */
 	private const SUBMIT = 'submitAndBack';
@@ -93,9 +104,9 @@ final class BulkGateway
 					],
 					'examples' => self::examples($target, $inputs),
 				],
-				'note' => 'Odebrat jednu položku vztahu (třeba jeden ceník z pěti) hromadná úprava v administraci '
-					. 'neumí, takže to neumí ani brána. Buď se pošle „replace" s výsledným seznamem, nebo se '
-					. 'zákazníci upraví jednotlivě přes formulář.',
+				'note' => 'Režimy jsou přesně to, co nabízí hromadná úprava v administraci: u vztahu N:N „add" přidá, '
+					. '„remove" odebere a „replace" nahradí celý seznam, u obyčejného pole „set" nastaví hodnotu. '
+					. 'Co pole v „modes" nemá, administrace neumí, takže to neumí ani brána.',
 			];
 		});
 	}
@@ -134,16 +145,23 @@ final class BulkGateway
 				GridReader::assertFilters($grid, $filter, $target->getEndpoint());
 			}
 
-			$ids = $byFilter ? self::resolve($grid) : $this->assertExist($target, $given);
+			$ids = $byFilter ? self::resolve($grid) : self::assertVisible($grid, $given);
+
+			if (!$ids) {
+				throw ApiException::badRequest('Filtr nevrací žádný záznam, hromadná úprava by na nic nesáhla. '
+					. 'Filtry a jejich popis vrátí GET ' . $target->getEndpoint() . '.');
+			}
+
 			$plan = $this->readPlan($target, $form, $body['values'] ?? null);
 			$changes = self::describeChanges($form, $plan);
 			$targets = $this->describeTargets($target, $ids);
 			$scope = 'bulk:' . $target->presenter . '/' . $target->grid;
 			$fingerprint = self::fingerprint($ids);
+			$state = $this->state($target, $ids, $plan);
 			$requiresConfirm = \count($ids) > $target->confirmFrom;
 
 			if ($dryRun) {
-				$preview = $this->previewToken->issue($scope, $fingerprint, self::signature($plan), []);
+				$preview = $this->previewToken->issue($scope, $fingerprint, self::signature($plan), $state);
 
 				return [
 					'dryRun' => true,
@@ -176,9 +194,11 @@ final class BulkGateway
 				$scope,
 				$fingerprint,
 				self::signature($plan),
-				[],
+				$state,
 				'Cílová množina se od náhledu změnila — filtr teď vrací jiné záznamy, než které uživatel viděl. '
 					. 'Zopakuj dotaz s "dryRun": true, ukaž nový výběr a zapiš znovu.',
+				'Od náhledu se u cílových záznamů změnila pole, která hromadná úprava mění — mohl je upravit někdo '
+					. 'v administraci. Zopakuj dotaz s "dryRun": true, ukaž nový náhled a zapiš znovu.',
 			);
 
 			return $this->write($target, $form, $ids, $plan, $targets, $changes, PresenterRunner::actor($body));
@@ -223,6 +243,18 @@ final class BulkGateway
 			throw new ApiException(422, 'Hromadná úprava neprošla validací', \implode(' ', \array_map('\strval', $errors)));
 		}
 
+		// Levior: tady chyběla kontrola flash zpráv, takže odmítnutí z `onSuccess` (projektový
+		// `onBeforeProcess` / `onProcess`) se hlásilo jako „written": true. Stejně jako u formulářů
+		// je chyba nebo varování po odeslání 422 a do auditu nic nejde.
+		$refusals = $run->getRefusals();
+
+		if ($refusals) {
+			throw new ApiException(422, 'Hromadná úprava odmítnuta', \sprintf(
+				'Hromadná úprava prošla validací, ale administrace ji odmítla: %s',
+				\implode(' ', \array_column($refusals, 'message')),
+			));
+		}
+
 		$this->changelogRepository->createOne([
 			'user' => $this->runner->auditUser($actor),
 			'entity' => $target->presenter,
@@ -257,10 +289,15 @@ final class BulkGateway
 			$name = (string) $name;
 			$field = FormReader::describeControl($name, $control);
 			unset($field['value'], $field['valueLabel'], $field['required'], $field['readOnly']);
-			$field['modes'] = $this->modes($target, $name, $control);
-			$field['note'] = Arrays::contains($field['modes'], self::MODE_ADD)
-				? 'Vztah N:N: „add" přidá k tomu, co záznam má, „replace" původní vazby zahodí a nastaví poslané.'
-				: 'Obyčejné pole: „set" hodnotu nastaví všem cílům.';
+			$field['modes'] = $this->modes($target, $form, $name, $control);
+			$field['note'] = match (true) {
+				Arrays::contains($field['modes'], self::MODE_ADD) => 'Vztah N:N: „add" přidá k tomu, co záznam má, '
+					. '„remove" odebere poslané položky, „replace" původní vazby zahodí a nastaví poslané '
+					. '(prázdný seznam = všechny vazby smazat).',
+				Arrays::contains($field['modes'], self::MODE_REPLACE) => 'Výběr více položek: „replace" nastaví všem cílům '
+					. 'přesně poslaný seznam; přidat ani odebrat jednu položku administrace u tohohle pole neumí.',
+				default => 'Obyčejné pole: „set" hodnotu nastaví všem cílům.',
+			};
 
 			$inputs[] = $field;
 		}
@@ -296,8 +333,19 @@ final class BulkGateway
 				));
 			}
 
-			$modes = $this->modes($target, $name, $control);
+			$modes = $this->modes($target, $form, $name, $control);
 			[$mode, $value] = self::readMode($name, $spec, $modes);
+
+			// Admin 2.1 bere „přidat" a „odebrat" s prázdnou hodnotou jako nahrazení seznamem
+			// hodnot: `{"add": []}` i `{"remove": []}` by cílům smazaly všechny vazby.
+			if (($mode === self::MODE_ADD || $mode === self::MODE_REMOVE) && \array_filter((array) $value, static fn ($item): bool => $item !== '' && $item !== null) === []) {
+				throw ApiException::badRequest(\sprintf(
+					'U pole „%s" je „%s" s prázdným seznamem — nic by se nepřidalo ani neodebralo, administrace by '
+						. 'ale vazby nahradila prázdnem. Pošli položky, nebo „replace": [] když se mají vazby opravdu smazat.',
+					$name,
+					$mode,
+				));
+			}
 
 			try {
 				$control->setValue(self::coerce($control, $value));
@@ -317,19 +365,122 @@ final class BulkGateway
 	}
 
 	/**
-	 * V jakých režimech se dá pole měnit. Přidávat jde jen do vztahu N:N — jinde by `relate()`
-	 * neměl co dělat a hromadná úprava by hodnotu tiše zahodila.
+	 * V jakých režimech se dá pole měnit. Rozhoduje, co nabízí administrace: prvek u vstupu
+	 * v kontejneru `keep` a to, jestli je pole vztah N:N — přidávat a odebírat umí admin jen
+	 * přes `RelationCollection` (`relate()` / `unrelate()`), jinde by hodnotu stejně nahradil.
 	 * @return array<string>
+	 * @throws \DoryoApi\Http\ApiException
 	 */
-	private function modes(BulkTarget $target, string $name, BaseControl $control): array
+	private function modes(BulkTarget $target, Form $form, string $name, BaseControl $control): array
 	{
 		if (!$control instanceof MultiSelectBox) {
 			return [self::MODE_SET];
 		}
 
-		$relation = $this->connection->findRepository($target->entity)->getStructure()->getRelation($name);
+		// select „Původní / Nahradit / Přidat / Odebrat" má jen admin 2.1; u zaškrtávátka umí brána jen nahradit
+		if (!self::keep($form)->getComponent($name, false) instanceof SelectBox) {
+			return [self::MODE_REPLACE];
+		}
 
-		return $relation instanceof RelationNxN ? [self::MODE_ADD, self::MODE_REPLACE] : [self::MODE_REPLACE];
+		return $this->isRelationNxN($target, $name) ? [self::MODE_ADD, self::MODE_REPLACE, self::MODE_REMOVE] : [self::MODE_REPLACE];
+	}
+
+	/**
+	 * Stejné hledání vztahu jako v adminu: vstup z kontejneru detailového formuláře se jmenuje
+	 * `<kontejner>_<pole>` a vztah je pak pod částí před podtržítkem.
+	 */
+	private function isRelationNxN(BulkTarget $target, string $name): bool
+	{
+		$structure = $this->connection->findRepository($target->entity)->getStructure();
+		$prefix = \str_contains($name, '_') ? Strings::before($name, '_') : null;
+
+		return ($prefix !== null && $structure->getRelation($prefix) instanceof RelationNxN)
+			|| $structure->getRelation($name) instanceof RelationNxN;
+	}
+
+	/**
+	 * Stav cílů v polích, která hromadná úprava mění — na něj se váže token, stejně jako u formuláře
+	 * na stav záznamu. Když mezitím někdo cílům změní třeba ceníky, náhled neplatí a je to 409.
+	 *
+	 * Čte se levně, přímo z tabulek: jeden dotaz na vazební tabulku každého vztahu N:N a jeden na
+	 * sloupce ostatních polí. Pole, které sloupcem není (vstup z kontejneru, jazykové mutace,
+	 * dopočítaná hodnota), v otisku chybí — u něj se souběh nehlídá.
+	 * @param array<string> $ids
+	 * @param array<string, array{mode: string, value: mixed}> $plan
+	 * @return array<string, mixed>
+	 */
+	private function state(BulkTarget $target, array $ids, array $plan): array
+	{
+		$structure = $this->connection->findRepository($target->entity)->getStructure();
+		$table = $structure->getTable()->getName();
+		$pk = $structure->getPK()->getName();
+		$columns = [];
+		$state = [];
+
+		foreach (\array_keys($plan) as $name) {
+			$relation = $structure->getRelation($name);
+
+			if ($relation instanceof RelationNxN) {
+				$rows = $this->connection->rows(['v' => $relation->getVia()], [
+					's' => 'v.' . $relation->getSourceViaKey(),
+					't' => 'v.' . $relation->getTargetViaKey(),
+				])->where('v.' . $relation->getSourceViaKey(), $ids);
+				$links = [];
+
+				foreach ($rows as $row) {
+					$links[(string) $row->s][] = (string) $row->t;
+				}
+
+				foreach ($links as $source => $linked) {
+					\sort($linked);
+					$links[$source] = $linked;
+				}
+
+				\ksort($links);
+				$state[$name] = $links;
+
+				continue;
+			}
+
+			$column = $relation !== null
+				? ($relation->isKeyHolder() ? $relation->getSourceKey() : null)
+				: $structure->getColumn($name);
+
+			if ($column instanceof Column) {
+				$column = $column->hasMutations() ? null : $column->getName();
+			}
+
+			if ($column === null) {
+				continue;
+			}
+
+			$columns[$name] = $column;
+		}
+
+		if ($columns) {
+			$select = ['id' => 't.' . $pk];
+
+			foreach (\array_values($columns) as $i => $column) {
+				$select['c' . $i] = 't.' . $column;
+			}
+
+			$values = [];
+
+			foreach ($this->connection->rows(['t' => $table], $select)->where('t.' . $pk, $ids) as $row) {
+				foreach (\array_keys($columns) as $i => $name) {
+					$values[$name][(string) $row->id] = $row->{'c' . $i};
+				}
+			}
+
+			foreach ($values as $name => $byId) {
+				\ksort($byId);
+				$state[$name] = $byId;
+			}
+		}
+
+		\ksort($state);
+
+		return $state;
 	}
 
 	/**
@@ -340,8 +491,10 @@ final class BulkGateway
 	private function describeTargets(BulkTarget $target, array $ids): array
 	{
 		$sample = [];
+		$repository = $this->connection->findRepository($target->entity);
+		$pk = $repository->getStructure()->getPK()->getName();
 
-		foreach ($this->connection->findRepository($target->entity)->many()->where('this.uuid', \array_slice($ids, 0, self::SAMPLE))->toArray() as $id => $entity) {
+		foreach ($repository->many()->where('this.' . $pk, \array_slice($ids, 0, self::SAMPLE))->toArray() as $id => $entity) {
 			$row = ['id' => (string) $id];
 
 			foreach (['code', 'company', 'name', 'fullname'] as $property) {
@@ -367,19 +520,30 @@ final class BulkGateway
 	}
 
 	/**
-	 * Existují všechna poslaná id? Neexistující se nedá tiše přeskočit — uživatel by dostal
-	 * „hotovo" u záznamů, na které se nesáhlo.
+	 * Jsou všechna poslaná id v gridu — tedy v tom, co identita v administraci vidí? Neexistující
+	 * nebo cizí se nedá tiše přeskočit: uživatel by dostal „hotovo" u záznamů, na které se nesáhlo.
+	 *
+	 * Kontroluje se proti zdroji gridu, ne proti repozitáři: projekt v něm omezuje, co kdo vidí
+	 * (For Baby obchodníkovi jen jeho zákazníky). Admin 2.1 sám u vztahů N:N sahá přímo přes
+	 * `RelationCollection` na poslaná id a zdroj gridu neřeší, takže bez téhle kontroly by šlo
+	 * obchodníkovi přidat ceník i cizímu zákazníkovi.
 	 * @param array<string> $ids
 	 * @return array<string>
 	 * @throws \DoryoApi\Http\ApiException
 	 */
-	private function assertExist(BulkTarget $target, array $ids): array
+	private static function assertVisible(AdminGrid $grid, array $ids): array
 	{
-		$known = \array_keys($this->connection->findRepository($target->entity)->many()->where('this.uuid', $ids)->toArray());
-		$missing = \array_diff($ids, \array_map('\strval', $known));
+		$source = $grid->getSource();
+		$idName = $grid->getSourceIdName();
+		$column = \str_contains($idName, '.') ? $idName : $source->getPrefix() . $idName;
+		$visible = \array_map('\strval', $source->where($column, $ids)->toArrayOf($idName));
+		$missing = \array_values(\array_diff($ids, $visible));
 
 		if ($missing) {
-			throw ApiException::notFound(\sprintf('Tahle id neexistují: %s.', \implode(', ', $missing)));
+			throw ApiException::notFound(\sprintf(
+				'Tahle id v seznamu nejsou — neexistují, nebo je účet, za který brána jedná, v administraci nevidí: %s.',
+				\implode(', ', $missing),
+			));
 		}
 
 		return $ids;
@@ -419,10 +583,11 @@ final class BulkGateway
 	/**
 	 * Tělo POSTu tak, jak by ho poslal prohlížeč.
 	 *
-	 * Zaškrtnuté „Původní" je v administraci rozdíl mezi „přidat" a „nahradit", a hlavně: co
-	 * zaškrtnuté zůstane, to hromadná úprava vůbec neřeší. Proto se posílá u všech vstupů, které
-	 * se nemění — jinak by se jejich prázdná hodnota zapsala všem cílům (u vztahu jako smazání
-	 * vazeb, u čísla jako NULL do sloupce, který NULL nebere).
+	 * Co v `keep` zůstane na „Původní", to hromadná úprava vůbec neřeší. Proto se „Původní" posílá
+	 * u všech vstupů, které se nemění — jinak by se jejich prázdná hodnota zapsala všem cílům (u vztahu
+	 * jako smazání vazeb, u čísla jako NULL do sloupce, který NULL nebere). U selectu je to volba
+	 * `none`, u zaškrtávátka zaškrtnutí; měněný vstup dostane u selectu svůj režim, zaškrtávátko se
+	 * u něj neposílá (prohlížeč nezaškrtnuté políčko neposílá vůbec).
 	 * @param array<string, array{mode: string, value: mixed}> $plan
 	 * @return array<string, mixed>
 	 * @throws \DoryoApi\Http\ApiException
@@ -431,15 +596,21 @@ final class BulkGateway
 	{
 		$post = ['bulkType' => 'selected', 'keep' => [], 'values' => [], self::SUBMIT => 'Uložit a zpět'];
 
-		foreach (self::keep($form)->getComponents() as $checkbox) {
-			if (!$checkbox instanceof BaseControl) {
+		foreach (self::keep($form)->getComponents() as $keep) {
+			if (!$keep instanceof BaseControl) {
 				continue;
 			}
 
-			$name = (string) $checkbox->getName();
+			$name = (string) $keep->getName();
 			$mode = $plan[$name]['mode'] ?? null;
 
-			if ($mode === self::MODE_REPLACE || $mode === self::MODE_SET) {
+			if ($keep instanceof SelectBox) {
+				$post['keep'][$name] = $mode ?? self::KEEP_NONE;
+
+				continue;
+			}
+
+			if ($mode !== null) {
 				continue;
 			}
 
@@ -533,9 +704,10 @@ final class BulkGateway
 			}
 
 			throw ApiException::badRequest(\sprintf(
-				'U pole „%s" se musí říct, co se s hodnotou má stát: {"add": [...]} přidá k tomu, co záznam má, '
-					. '{"replace": [...]} původní vazby zahodí a nastaví poslané.',
+				'U pole „%s" se musí říct, co se s hodnotou má stát (umí: %s): {"add": [...]} přidá k tomu, co záznam má, '
+					. '{"remove": [...]} odebere, {"replace": [...]} původní vazby zahodí a nastaví poslané.',
 				$name,
+				\implode(', ', $modes),
 			));
 		}
 
@@ -550,21 +722,16 @@ final class BulkGateway
 
 		$mode = (string) \array_key_first($spec);
 
-		if ($mode === 'remove') {
-			throw ApiException::badRequest(\sprintf(
-				'Odebrat jednu položku z pole „%s" hromadná úprava v administraci neumí, takže to neumí ani brána. '
-					. 'Buď pošli {"replace": [...]} s výsledným seznamem, nebo uprav zákazníky jednotlivě přes '
-					. 'formulář zákazníka.',
-				$name,
-			));
-		}
-
 		if (!Arrays::contains($modes, $mode)) {
 			throw ApiException::badRequest(\sprintf(
-				'Pole „%s" režim „%s" nemá. Umí: %s.',
+				'Pole „%s" režim „%s" nemá, umí jen: %s.%s',
 				$name,
 				$mode,
 				\implode(', ', $modes),
+				$mode === self::MODE_REMOVE || $mode === self::MODE_ADD
+					? ' Přidat a odebrat jednu položku umí administrace jen u vztahu N:N; tady pošli {"replace": [...]} '
+						. 's výsledným seznamem, nebo uprav záznamy jednotlivě přes formulář.'
+					: '',
 			));
 		}
 
@@ -678,6 +845,11 @@ final class BulkGateway
 			$examples['přidat vybraným záznamům položku'] = [
 				'ids' => ['<id>', '<id>'],
 				'values' => [$relation => [self::MODE_ADD => ['<id položky>']]],
+				'dryRun' => true,
+			];
+			$examples['odebrat vybraným záznamům položku'] = [
+				'ids' => ['<id>', '<id>'],
+				'values' => [$relation => [self::MODE_REMOVE => ['<id položky>']]],
 				'dryRun' => true,
 			];
 			$examples['nahradit celý seznam'] = [

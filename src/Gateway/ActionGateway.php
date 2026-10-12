@@ -41,6 +41,14 @@ final class ActionGateway
 		return $this->runner->withAdministrator(function () use ($target, $body, $params, $dryRun, $id, $resource): array {
 			$this->runner->assertManager($resource, $target->label);
 
+			if ($dryRun) {
+				// Náhled otevře stránku akce s jejími parametry, jen bez signálu: administrace tím
+				// sama řekne, jestli identita na záznam smí — For Baby `OrderPresenter::startup()`
+				// obchodníkovi cizí objednávku odmítne dřív, než by signál vůbec běžel. Bez toho by
+				// náhled ukázal záznam, na který ostrý běh nesmí, a token by se vydal zbytečně.
+				$this->runner->open($target->presenter, ['action' => $target->action] + $params);
+			}
+
 			$before = $this->describe($target, $id);
 			$scope = 'action:' . $target->presenter . '/' . $target->signal;
 
@@ -78,6 +86,20 @@ final class ActionGateway
 			);
 
 			$run = $this->runner->run($target->presenter, ['action' => $target->action, 'do' => $target->signal] + $params);
+
+			// Levior: tady kontrola chyběla a akce vracela „executed": true i tehdy, když ji
+			// administrace odmítla — signály odmítnutí hlásí flash zprávou a přesměrováním, ne
+			// výjimkou (For Baby `handleCancelOrder`: „Objednávku se nepodařilo stornovat" jako error,
+			// nepovolené storno jako warning). Stejně jako u formulářů je to 422 a do auditu nic nejde.
+			$refusals = $run->getRefusals();
+
+			if ($refusals) {
+				throw new ApiException(422, 'Akce odmítnuta', \sprintf(
+					'Administrace akci „%s" neprovedla: %s',
+					$target->label,
+					\implode(' ', \array_column($refusals, 'message')),
+				));
+			}
 
 			$this->changelogRepository->createOne([
 				'user' => $this->runner->auditUser(PresenterRunner::actor($body)),
