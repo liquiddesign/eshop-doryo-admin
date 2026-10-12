@@ -72,6 +72,8 @@ final class DoryoAdminDI extends CompilerExtension
 				'createAction' => Expect::string('new'),
 				'entity' => Expect::string()->nullable(),
 				'createNote' => Expect::string(''),
+				// pole, která brána nevydá ani nepřijme (tajné klíče, hesla)
+				'hidden' => Expect::listOf('string'),
 			])->castTo('array')),
 			// whitelist signálů (handle*): popis parametrů a význam z kódu vyčíst nejde, proto ručně
 			'actions' => Expect::listOf(Expect::structure([

@@ -15,6 +15,7 @@ use Nette\Forms\Controls\TextArea;
 use Nette\Forms\Controls\TextInput;
 use Nette\Forms\Controls\UploadControl;
 use Nette\Forms\Form;
+use Nette\Utils\Arrays;
 use Nette\Utils\Strings;
 
 /**
@@ -32,13 +33,14 @@ final class FormReader
 
 	/**
 	 * Popis polí a skupin formuláře.
+	 * @param list<string> $hidden Pole, která se nevydávají (viz {@see FormTarget::$hidden})
 	 * @return array{groups: array<array<string, mixed>>, fields: array<array<string, mixed>>}
 	 */
-	public static function describe(Form $form): array
+	public static function describe(Form $form, array $hidden = []): array
 	{
 		$fields = [];
 
-		foreach (self::controls($form) as $name => $control) {
+		foreach (self::controls($form, $hidden) as $name => $control) {
 			$fields[] = self::describeControl($name, $control);
 		}
 
@@ -49,7 +51,7 @@ final class FormReader
 			$names = [];
 
 			foreach ($group->getControls() as $control) {
-				if (!$control instanceof BaseControl || self::skip($control)) {
+				if (!$control instanceof BaseControl || self::skip($control) || Arrays::contains($hidden, self::name($control))) {
 					continue;
 				}
 
@@ -93,15 +95,17 @@ final class FormReader
 	}
 
 	/**
-	 * Pole, která model smí nastavovat. Tlačítka a skrytá pole ne — ta si formulář řeší sám.
+	 * Pole, která model smí nastavovat. Tlačítka a skrytá pole ne — ta si formulář řeší sám;
+	 * ani pole, která konfigurace schovává (`hidden`).
+	 * @param list<string> $hidden
 	 * @return array<string, \Nette\Forms\Controls\BaseControl>
 	 */
-	public static function controls(Form $form): array
+	public static function controls(Form $form, array $hidden = []): array
 	{
 		$controls = [];
 
 		foreach ($form->getControls() as $control) {
-			if (!$control instanceof BaseControl || self::skip($control)) {
+			if (!$control instanceof BaseControl || self::skip($control) || Arrays::contains($hidden, self::name($control))) {
 				continue;
 			}
 

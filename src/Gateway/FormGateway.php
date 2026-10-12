@@ -10,6 +10,7 @@ use Nette\Application\UI\Presenter;
 use Nette\Forms\Controls\BaseControl;
 use Nette\Forms\Controls\Button;
 use Nette\Forms\Controls\Checkbox;
+use Nette\Forms\Controls\ChoiceControl;
 use Nette\Forms\Controls\HiddenField;
 use Nette\Forms\Controls\MultiChoiceControl;
 use Nette\Forms\Controls\SubmitButton;
@@ -51,7 +52,7 @@ final class FormGateway
 
 		return $this->runner->withAdministrator(function () use ($target, $id): array {
 			$form = $id === null ? $this->openNew($target, null) : $this->open($target, $id);
-			$described = FormReader::describe($form);
+			$described = FormReader::describe($form, $target->hidden);
 
 			$schema = [
 				'presenter' => $target->presenter,
@@ -137,7 +138,7 @@ final class FormGateway
 			$form = $create ? $this->openNew($target, $id) : $this->open($target, $id);
 			$before = FormReader::values($form);
 
-			self::apply($form, $values);
+			self::apply($form, $values, $target->hidden);
 
 			$after = FormReader::values($form);
 			$diff = self::diff($form, $before, $after);
@@ -158,7 +159,7 @@ final class FormGateway
 					'expiresAt' => $errors ? null : $preview['expiresAt'],
 					'diff' => $diff,
 					'errors' => $errors,
-					'warnings' => self::warnings($form, $diff),
+					'warnings' => self::warnings($form, $diff, $target->hidden),
 				];
 
 				if ($create) {
@@ -397,10 +398,11 @@ final class FormGateway
 	/**
 	 * Dosadí do formuláře, co poslal model. Vstup je částečný — posílají se jen změny.
 	 * @param array<mixed> $values
+	 * @param list<string> $hidden Pole, která konfigurace schovává — model je poslat nesmí (400 jako neznámé)
 	 */
-	private static function apply(Form $form, array $values): void
+	private static function apply(Form $form, array $values, array $hidden = []): void
 	{
-		$controls = FormReader::controls($form);
+		$controls = FormReader::controls($form, $hidden);
 
 		foreach ($values as $name => $value) {
 			$name = (string) $name;
@@ -507,9 +509,10 @@ final class FormGateway
 
 	/**
 	 * @param array<array<string, mixed>> $diff
+	 * @param list<string> $hidden
 	 * @return array<string>
 	 */
-	private static function warnings(Form $form, array $diff): array
+	private static function warnings(Form $form, array $diff, array $hidden = []): array
 	{
 		$warnings = [];
 
@@ -519,7 +522,7 @@ final class FormGateway
 
 		$readOnly = [];
 
-		foreach (FormReader::controls($form) as $control) {
+		foreach (FormReader::controls($form, $hidden) as $control) {
 			if (!$control->isDisabled()) {
 				continue;
 			}
@@ -612,6 +615,13 @@ final class FormGateway
 			if (\is_array($value)) {
 				self::put($post, $control->getHtmlName(), \array_values(\array_map('\strval', $value)));
 
+				continue;
+			}
+
+			// Select bez vybrané hodnoty prohlížeč nepošle vůbec. Prázdný řetězec by vadil u AJAXových selectů
+			// liquiddesign/admin: AdminForm::getValuesWithAjax() bere jejich hodnotu přímo z POSTu, takže
+			// '' doletí až do onSuccess a cizí klíč spadne (For Baby: „Nadřazený zákazník" → fk_parentCustomer).
+			if ($value === null && $control instanceof ChoiceControl) {
 				continue;
 			}
 

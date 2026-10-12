@@ -17,6 +17,8 @@ final class FormTarget
 	 *     že založený záznam opravdu vznikl
 	 * @param string $createNote Výhrada k zakládání, kterou má model uživateli přetlumočit dřív,
 	 *     než záznam založí; vrací se ve schématu i v mapě stránek
+	 * @param list<string> $hidden Pole, která brána nevydá ani nepřijme (tajné klíče, hesla) — formulář
+	 *     je při zápisu dostane se současnou hodnotou, takže se nepřepíšou
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -29,6 +31,7 @@ final class FormTarget
 		public readonly string $createAction = 'new',
 		public readonly ?string $entity = null,
 		public readonly string $createNote = '',
+		public readonly array $hidden = [],
 	) {
 	}
 

@@ -66,6 +66,7 @@ final class GatewayConfig
 				createAction: (string) ($form['createAction'] ?? 'new'),
 				entity: isset($form['entity']) ? (string) $form['entity'] : null,
 				createNote: (string) ($form['createNote'] ?? ''),
+				hidden: \array_values(\array_map('\strval', (array) ($form['hidden'] ?? []))),
 			);
 
 			$this->forms[self::key($target->presenter, $target->form)] = $target;
