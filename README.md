@@ -72,7 +72,8 @@ typu.
 
 Whitelist je **konfigurace, ne kód** — další stránka se přidá řádkem v NEONu. Oprávnění se jím
 neřeší (to drží role účtu v Administrace → Role), whitelist jen říká „tohle brána umí popsat".
-Položky mají pevné klíče, překlep spadne už při kompilaci kontejneru.
+Položky mají pevné klíče, překlep spadne už při kompilaci kontejneru. Popisy jsou texty pro model;
+procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text nesmí začínat `@`.
 
 | položka | klíče (výchozí) |
 | --- | --- |
