@@ -42,6 +42,7 @@ final class GatewayConfig
 	 * @param array<array<string, mixed>> $grids Seznamy administrace, které smí agent číst
 	 * @param int $previewTokenLifetime Platnost náhledového tokenu v sekundách
 	 * @param int $bulkConfirmFrom Výchozí práh, od kolika cílů chce hromadná úprava potvrzení
+	 * @param string $agentName Jméno agenta do auditu („<administrátor> via Kolego")
 	 */
 	public function __construct(
 		private string $administratorLogin,
@@ -51,6 +52,7 @@ final class GatewayConfig
 		array $grids = [],
 		private int $previewTokenLifetime = 600,
 		private int $bulkConfirmFrom = 50,
+		private string $agentName = 'Kolego',
 	) {
 		foreach ($forms as $form) {
 			$target = new FormTarget(
@@ -135,6 +137,11 @@ final class GatewayConfig
 	public function getAdministratorLogin(): string
 	{
 		return $this->administratorLogin;
+	}
+
+	public function getAgentName(): string
+	{
+		return $this->agentName;
 	}
 
 	public function getPreviewTokenLifetime(): int

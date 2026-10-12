@@ -20,17 +20,21 @@ use Nette\Utils\Strings;
  * než co uživateli předtím ukázal.
  *
  * Token je bezstavový (HMAC, žádná tabulka) a váže se i na stav záznamu — když ho mezitím někdo
- * změnil, náhled už neplatí a musí se zopakovat. Tím se řeší i souběh.
+ * změnil, náhled už neplatí a musí se zopakovat. Tím se řeší i souběh. Váže se taky na identitu,
+ * za kterou brána jedná: náhled, který viděl jeden obchodník, nezapíše jiný ani servisní účet.
  *
  * Tajemství je API token z {@see Config}: kdo ho má, může volat API tak jako tak, takže vlastní
  * konfigurační položka by nic nepřidala, jen by šla zapomenout nastavit.
  */
 final class PreviewToken
 {
-	private const VERSION = 'pt1';
+	private const VERSION = 'pt2';
 
-	public function __construct(private Config $config, private GatewayConfig $gatewayConfig)
-	{
+	public function __construct(
+		private Config $config,
+		private GatewayConfig $gatewayConfig,
+		private PresenterRunner $runner,
+	) {
 	}
 
 	/**
@@ -45,6 +49,7 @@ final class PreviewToken
 		$payload = [
 			'v' => self::VERSION,
 			's' => $scope,
+			'a' => $this->runner->getIdentityKey(),
 			'i' => $id,
 			'c' => self::hash($changes),
 			'r' => self::hash($state),
@@ -89,6 +94,11 @@ final class PreviewToken
 		if (($payload['v'] ?? null) !== self::VERSION || ($payload['s'] ?? null) !== $scope) {
 			throw new ApiException(409, 'Náhled patří jinam', 'previewToken byl vystavený na jinou akci. '
 				. 'Zopakuj dotaz s "dryRun": true.');
+		}
+
+		if (($payload['a'] ?? null) !== $this->runner->getIdentityKey()) {
+			throw new ApiException(409, 'Náhled patří jinému účtu', 'previewToken vystavil náhled pro jiného '
+				. 'administrátora, než za kterého jde zápis. Zopakuj dotaz s "dryRun": true.');
 		}
 
 		if (($payload['i'] ?? null) !== $id) {

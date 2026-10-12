@@ -6,8 +6,8 @@ namespace DoryoAdmin\Gateway;
 
 use Admin\Administrator;
 use Admin\Authorizator;
-use Admin\DB\AdministratorRepository;
 use DoryoApi\Http\ApiException;
+use DoryoApi\Http\Query;
 use Nette\Application\AbortException;
 use Nette\Application\BadRequestException;
 use Nette\Application\IPresenterFactory;
@@ -47,16 +47,18 @@ use StORM\Entity;
  */
 final class PresenterRunner
 {
-	/** Jméno služby administrátora; není autowirovaná, protože shop má i zákaznického uživatele. */
-	private const ADMINISTRATOR_SERVICE = 'admin.administrator';
-
-	/** Identita účtu agenta; mapa stránek se na ni ptá u každé položky menu, tak se čte jen jednou. */
+	/** Za koho brána v tomhle požadavku jedná; nastaví {@see self::identify()}. */
 	private ?IIdentity $identity = null;
 
+	/**
+	 * @param \Admin\Administrator $administrator Uživatel administrace (služba `admin.administrator`); není
+	 *     autowirovaný, protože shop má i zákaznického uživatele — předává ho DI rozšíření balíku
+	 */
 	public function __construct(
 		private IPresenterFactory $presenterFactory,
 		private Container $container,
-		private AdministratorRepository $administratorRepository,
+		private Administrator $administrator,
+		private IdentityResolver $identityResolver,
 		private Authorizator $authorizator,
 		private DIConnection $connection,
 		private GatewayConfig $config,
@@ -64,11 +66,83 @@ final class PresenterRunner
 	}
 
 	/**
-	 * Přihlásí účet agenta, pustí nad ním práci a zase ho odhlásí.
+	 * Určí, za koho brána v tomhle požadavku jedná ({@see IdentityResolver}). Volá se jako první
+	 * věc v každé obsluze — dřív, než se cokoli spustí, a dřív, než by šlo cokoli zapsat.
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	public function identify(Query $query): void
+	{
+		$this->identity = $this->identityResolver->resolve($query);
+	}
+
+	/**
+	 * Identita nastavená zvenku, bez požadavku API — pro projektový kód, který gateways volá sám.
+	 */
+	public function useIdentity(IIdentity $identity): void
+	{
+		$this->identity = $identity;
+	}
+
+	/**
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	public function getIdentity(): IIdentity
+	{
+		return $this->identity ?? throw new ApiException(500, 'Chyba serveru', 'Brána neví, za koho jedná '
+			. '(chybí PresenterRunner::identify()). Nahlas to vývojářům.');
+	}
+
+	/**
+	 * Klíč identity, na který se váže náhledový token: náhled jednoho administrátora nesmí
+	 * zapsat jiný.
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	public function getIdentityKey(): string
+	{
+		return (string) $this->getIdentity()->getId();
+	}
+
+	/**
+	 * Za koho brána jedná, do hlášek: „účet „doryo"", „účet „novak@shop.cz"".
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	public function describeIdentity(): string
+	{
+		return \sprintf('účet „%s"', Identities::label($this->getIdentity()));
+	}
+
+	/**
+	 * Kdo zápis udělal, do `admin_changelog.user`: skutečný administrátor, přes koho (agent)
+	 * a za koho podle těla. `actor` vyplňuje model, takže je to jen popisek, oprávnění na něm
+	 * nestojí. Sloupec má 255 znaků.
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	public function auditUser(?string $actor): string
+	{
+		$actor = $actor !== null ? Strings::trim($actor) : '';
+		$user = \sprintf('%s via %s', Identities::label($this->getIdentity()), $this->config->getAgentName());
+
+		if ($actor !== '') {
+			$user .= \sprintf(' (%s)', $actor);
+		}
+
+		return Strings::substring($user, 0, 255);
+	}
+
+	/**
+	 * Jméno člověka z těla požadavku (`actor`), jen jako popisek do auditu.
+	 * @param array<mixed> $body
+	 */
+	public static function actor(array $body): ?string
+	{
+		return isset($body['actor']) && \is_scalar($body['actor']) ? (string) $body['actor'] : null;
+	}
+
+	/**
+	 * Přihlásí identitu požadavku, pustí nad ní práci a zase ji odhlásí.
 	 *
-	 * Identita se nastavuje programově: požadavek od Doryo nemá cookie, ale `checkRequirements()`
-	 * chce přihlášeného administrátora a jeho roli. Kdo se ptal, se z Kolega zatím nedozvíme,
-	 * takže oprávnění drží role tohohle účtu a jméno žadatele je jen do auditu.
+	 * Identita se nastavuje programově: požadavek od agenta nemá cookie, ale `checkRequirements()`
+	 * chce přihlášeného administrátora a jeho roli.
 	 * @template T
 	 * @param callable(): T $callback
 	 * @return T
@@ -76,25 +150,31 @@ final class PresenterRunner
 	 */
 	public function withAdministrator(callable $callback): mixed
 	{
-		$administrator = $this->getAdministrator();
-		$administrator->login($this->getIdentity());
+		$this->administrator->login($this->getIdentity());
 
 		try {
 			return $callback();
 		} finally {
-			$administrator->logout(true);
+			$this->administrator->logout(true);
 		}
 	}
 
 	/**
-	 * Smí role účtu agenta na tuhle stránku? Bez privilegia jde o čtení, se `777` o úpravy —
-	 * přesně jak to čte administrace.
+	 * Smí identita požadavku na tuhle stránku? Bez privilegia jde o čtení, se `777` o úpravy —
+	 * přesně jak to čte administrace. Ptá se přímo autorizátoru, bez přihlášení, protože mapa
+	 * stránek se ptá u každé položky menu.
+	 * @throws \DoryoApi\Http\ApiException
 	 */
 	public function isAllowed(string $resource, ?string $privilege = null): bool
 	{
-		$role = $this->getIdentity()->getRoles()[0] ?? null;
+		// administrátor má jednu roli, ale IIdentity jich slibuje víc — stačí, když smí kterákoli
+		foreach ($this->getIdentity()->getRoles() as $role) {
+			if (\is_scalar($role) && $this->authorizator->isAllowed((string) $role, $resource, $privilege)) {
+				return true;
+			}
+		}
 
-		return $role !== null && $this->authorizator->isAllowed($role, $resource, $privilege);
+		return false;
 	}
 
 	/**
@@ -110,9 +190,9 @@ final class PresenterRunner
 		}
 
 		throw new ApiException(403, 'Přístup odepřen', \sprintf(
-			'Účet „%s" nemá na %s „Plný přístup" (777), takže akci „%s" spustit nesmí. '
+			'%s nemá na %s „Plný přístup" (777), takže akci „%s" spustit nesmí. '
 				. 'Oprávnění se nastavují v Administrace → Role.',
-			$this->config->getAdministratorLogin(),
+			Strings::firstUpper($this->describeIdentity()),
 			$resource,
 			$label,
 		));
@@ -165,8 +245,8 @@ final class PresenterRunner
 				// (neznámá akce, chybějící parametr) je opravdu 404 a nemá se tvářit jako oprávnění
 				if ($e->getHttpCode() === 403 || \str_contains($e->getMessage(), 'Not allowed')) {
 					throw new ApiException(403, 'Přístup odepřen', \sprintf(
-						'Účet „%s" na %s nesmí: %s. Oprávnění se nastavují v Administrace → Role.',
-						$this->config->getAdministratorLogin(),
+						'%s na %s nesmí: %s. Oprávnění se nastavují v Administrace → Role.',
+						Strings::firstUpper($this->describeIdentity()),
 						$presenterName,
 						$e->getMessage(),
 					));
@@ -203,37 +283,6 @@ final class PresenterRunner
 		}
 
 		return $run;
-	}
-
-	/**
-	 * @throws \DoryoApi\Http\ApiException
-	 */
-	private function getIdentity(): IIdentity
-	{
-		if ($this->identity !== null) {
-			return $this->identity;
-		}
-
-		$login = $this->config->getAdministratorLogin();
-		$identity = $this->administratorRepository->getByAccountLogin($login);
-
-		if (!$identity instanceof IIdentity) {
-			throw new ApiException(503, 'Účet pro Doryo neexistuje', \sprintf(
-				'V administraci není administrátor s účtem „%s". Založ ho v Administrace → Administrátoři, '
-					. 'přiřaď mu roli a v Administrace → Role mu nastav, na které stránky smí.',
-				$login,
-			));
-		}
-
-		return $this->identity = $identity;
-	}
-
-	private function getAdministrator(): Administrator
-	{
-		/** @var \Admin\Administrator $administrator */
-		$administrator = $this->container->getService(self::ADMINISTRATOR_SERVICE);
-
-		return $administrator;
 	}
 
 	/**

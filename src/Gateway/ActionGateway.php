@@ -80,7 +80,7 @@ final class ActionGateway
 			$run = $this->runner->run($target->presenter, ['action' => $target->action, 'do' => $target->signal] + $params);
 
 			$this->changelogRepository->createOne([
-				'user' => FormGateway::auditUser(isset($body['actor']) ? (string) $body['actor'] : null),
+				'user' => $this->runner->auditUser(PresenterRunner::actor($body)),
 				'entity' => $target->presenter,
 				'objectId' => $id !== '' ? $id : null,
 				'type' => 'signal:' . $target->signal,

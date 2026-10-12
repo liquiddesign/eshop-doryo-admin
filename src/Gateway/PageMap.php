@@ -8,7 +8,8 @@ use Admin\Controls\IMenuFactory;
 use Admin\Controls\MenuItem;
 
 /**
- * Mapa administrace: co v ní vůbec je a co z toho smí účet agenta.
+ * Mapa administrace: co v ní vůbec je a co z toho smí identita požadavku (servisní účet agenta,
+ * nebo administrátor obchodníka).
  *
  * Bere se z `config/admin.neon` přes tutéž továrnu, která staví menu pro člověka, takže se
  * seznam nemá jak rozejít s tím, co je v administraci vidět. U stránek, které brána umí měnit,
@@ -47,8 +48,14 @@ final class PageMap
 		}
 
 		return [
+			'identity' => [
+				'administrator' => Identities::label($this->runner->getIdentity()),
+				'note' => 'Za tenhle účet administrace brána jedná: platí jeho role a co v administraci vidí. '
+					. 'Do auditu jde on; „actor" z těla je jen popisek.',
+			],
+			'version' => GatewayConfig::version(),
 			'items' => $items,
-			'note' => 'Vypisují se jen stránky, na které smí účet agenta. Měnit jde to, co má vyplněné „forms", '
+			'note' => 'Vypisují se jen stránky, na které smí účet z „identity". Měnit jde to, co má vyplněné „forms", '
 				. '„actions" nebo „bulk", číst jde, co má „grids"; další klíče u stránky jsou cesty projektu. U ostatních '
 				. 'stránek brána jen ví, že existují. Formulář s „create": true umí i zakládat nový záznam — přečti si '
 				. 'u něj „createNote".',

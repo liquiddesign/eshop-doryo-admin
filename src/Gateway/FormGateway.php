@@ -15,7 +15,6 @@ use Nette\Forms\Controls\MultiChoiceControl;
 use Nette\Forms\Controls\SubmitButton;
 use Nette\Forms\Controls\UploadControl;
 use Nette\Forms\Form;
-use Nette\Utils\Strings;
 use StORM\DIConnection;
 use StORM\Entity;
 
@@ -181,18 +180,8 @@ final class FormGateway
 				$before,
 			);
 
-			return $this->write($target, $id, $form, $diff, $create, isset($body['actor']) ? (string) $body['actor'] : null);
+			return $this->write($target, $id, $form, $diff, $create, PresenterRunner::actor($body));
 		});
-	}
-
-	/**
-	 * Kdo zápis chtěl, do auditu. Jméno vyplňuje model, tak se jen zkrátí na délku sloupce.
-	 */
-	public static function auditUser(?string $actor): string
-	{
-		$actor = $actor !== null ? Strings::trim($actor) : '';
-
-		return $actor !== '' ? Strings::substring($actor, 0, 200) . ' via Doryo' : 'doryo';
 	}
 
 	/**
@@ -242,7 +231,7 @@ final class FormGateway
 		}
 
 		$this->changelogRepository->createOne([
-			'user' => self::auditUser($actor),
+			'user' => $this->runner->auditUser($actor),
 			'entity' => $target->presenter,
 			'objectId' => $id,
 			'type' => 'form:' . $action,

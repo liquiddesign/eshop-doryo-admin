@@ -181,7 +181,7 @@ final class BulkGateway
 					. 'Zopakuj dotaz s "dryRun": true, ukaž nový výběr a zapiš znovu.',
 			);
 
-			return $this->write($target, $form, $ids, $plan, $targets, $changes, isset($body['actor']) ? (string) $body['actor'] : null);
+			return $this->write($target, $form, $ids, $plan, $targets, $changes, PresenterRunner::actor($body));
 		});
 	}
 
@@ -224,7 +224,7 @@ final class BulkGateway
 		}
 
 		$this->changelogRepository->createOne([
-			'user' => FormGateway::auditUser($actor),
+			'user' => $this->runner->auditUser($actor),
 			'entity' => $target->presenter,
 			'objectId' => null,
 			'type' => \sprintf('bulk:%s:%d', $target->grid, \count($ids)),

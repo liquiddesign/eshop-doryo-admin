@@ -29,6 +29,10 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	private const ROUTE_BULK = 'v1/admin/bulk/{presenter}/{grid}';
 	private const ROUTE_GRIDS = 'v1/admin/grids/{presenter}/{grid}';
 
+	private const MERCHANT_DESCRIPTION = 'Obchodník, za kterého se jedná (id). Brána se pak přihlásí jako jeho administrátorský '
+		. 'účet, takže platí jeho role i to, co v administraci vidí. Dosazuje ho Kolego (případně hlavička X-Doryo-Za), '
+		. 'model ho nemá vymýšlet ani měnit. Bez něj jede brána pod servisním účtem.';
+
 	public function __construct(
 		private PageMap $pageMap,
 		private FormGateway $formGateway,
@@ -36,6 +40,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 		private BulkGateway $bulkGateway,
 		private GridGateway $gridGateway,
 		private GatewayConfig $config,
+		private PresenterRunner $runner,
 	) {
 	}
 
@@ -71,7 +76,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	 */
 	public function pages(array $params, Query $query): Response
 	{
-		unset($params, $query);
+		unset($params);
+		$this->runner->identify($query);
 
 		return new Response($this->pageMap->build());
 	}
@@ -82,6 +88,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	public function form(array $params, Query $query): Response
 	{
 		$target = $this->config->getForm($params['presenter'], $params['form']);
+		$this->runner->identify($query);
 
 		if ($query->getMethod() === 'POST') {
 			return new Response($this->formGateway->submit($target, $query->getBody() ?? []));
@@ -105,6 +112,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	public function bulk(array $params, Query $query): Response
 	{
 		$target = $this->config->getBulk($params['presenter'], $params['grid']);
+		$this->runner->identify($query);
 
 		if ($query->getMethod() === 'POST') {
 			return new Response($this->bulkGateway->submit($target, $query->getBody() ?? []));
@@ -119,6 +127,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	public function action(array $params, Query $query): Response
 	{
 		$target = $this->config->getAction($params['presenter'], $params['signal']);
+		$this->runner->identify($query);
 
 		return new Response($this->actionGateway->run($target, $query->getBody() ?? []));
 	}
@@ -129,6 +138,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	public function grid(array $params, Query $query): Response
 	{
 		$target = $this->config->getGrid($params['presenter'], $params['grid']);
+		$this->runner->identify($query);
 
 		return new Response($this->gridGateway->read(
 			$target,
@@ -152,7 +162,9 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'summary' => 'Mapa administrace',
 					'description' => 'Stránky administrace, na které smí účet agenta, a u nich formuláře '
 						. 'a akce, které jde přes API použít. Odsud se vychází — jméno presenteru a formuláře '
-						. 'z téhle odpovědi se dosazuje do ostatních cest.',
+						. 'z téhle odpovědi se dosazuje do ostatních cest. „identity" říká, za koho brána jedná; '
+						. 's obchodníkem (merchantId) jsou to stránky a oprávnění jeho administrátorského účtu.',
+					'parameters' => [self::merchantParam()],
 					'responses' => ['200' => ['description' => 'OK']],
 				],
 			],
@@ -165,6 +177,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'parameters' => [
 						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Customer.'),
 						self::pathParam('form', 'Jméno formuláře, obvykle form.'),
+						self::merchantParam(),
 						[
 							'name' => 'id',
 							'in' => 'query',
@@ -190,6 +203,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'parameters' => [
 						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Customer.'),
 						self::pathParam('form', 'Jméno formuláře, obvykle form.'),
+						self::merchantParam(),
 					],
 					'requestBody' => [
 						'required' => true,
@@ -211,7 +225,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									],
 									'dryRun' => ['type' => 'boolean', 'description' => 'true = jen validace a diff, nic se nezapíše.'],
 									'previewToken' => ['type' => 'string', 'description' => 'Token z předchozího dryRun; u ostrého zápisu povinný.'],
-									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se zapisuje; jde do auditu.'],
+									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se zapisuje; jde do auditu jen jako popisek.'],
+									'merchantId' => self::merchantProperty(),
 								],
 							],
 							'examples' => [
@@ -271,6 +286,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'parameters' => [
 						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Order.'),
 						self::pathParam('signal', 'Jméno akce, například cancelOrder.'),
+						self::merchantParam(),
 					],
 					'requestBody' => [
 						'required' => true,
@@ -287,7 +303,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									'dryRun' => ['type' => 'boolean'],
 									'previewToken' => ['type' => 'string'],
 									'confirm' => ['type' => 'boolean', 'description' => 'Povinné true u destruktivních akcí.'],
-									'actor' => ['type' => 'string'],
+									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se akce spouští; jde do auditu jen jako popisek.'],
+									'merchantId' => self::merchantProperty(),
 								],
 							],
 							'example' => [
@@ -323,8 +340,9 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 						. '(„grids"); jejich filtry vrátí první dotaz v „filters". Filtr, který grid nezná, je 400 — '
 						. 'nevrací se nefiltrovaný seznam, který by vypadal jako odfiltrovaný.',
 					'parameters' => [
-						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:CustomerLead.'),
+						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Customer.'),
 						self::pathParam('grid', 'Jméno gridu, například grid.'),
+						self::merchantParam(),
 						['name' => 'filter', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
 							'description' => 'JSON objekt jméno filtru → hodnota, například {"search":"Novák"}. Jména filtrů jsou v „filters".'],
 						['name' => 'page', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'integer', 'minimum' => 1], 'description' => 'Stránka, od 1.'],
@@ -340,7 +358,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'responses' => [
 						'200' => ['description' => 'Stránka seznamu: total, pageCount, hasMore, columns, rows [{id, cells}], filters, orderable'],
 						'400' => ['description' => 'Neznámý filtr, vadný JSON ve „filter" nebo neznámé řazení'],
-						'403' => ['description' => 'Účet agenta nesmí na stránku seznamu'],
+						'403' => ['description' => 'Účet agenta nesmí na stránku seznamu, nebo ji administrace odmítla otevřít'],
 						'404' => ['description' => 'Seznam brána číst neumí'],
 					],
 				],
@@ -355,6 +373,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'parameters' => [
 						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Customer.'),
 						self::pathParam('grid', 'Jméno gridu, například customers.'),
+						self::merchantParam(),
 					],
 					'responses' => ['200' => ['description' => 'OK']],
 				],
@@ -370,6 +389,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'parameters' => [
 						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Customer.'),
 						self::pathParam('grid', 'Jméno gridu, například customers.'),
+						self::merchantParam(),
 					],
 					'requestBody' => [
 						'required' => true,
@@ -399,7 +419,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									'dryRun' => ['type' => 'boolean', 'description' => 'true = jen náhled, nic se nezapíše.'],
 									'previewToken' => ['type' => 'string', 'description' => 'Token z předchozího dryRun; u ostrého zápisu povinný.'],
 									'confirm' => ['type' => 'boolean', 'description' => 'Povinné true, když náhled vrátil "requiresConfirm": true.'],
-									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se zapisuje; jde do auditu.'],
+									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se zapisuje; jde do auditu jen jako popisek.'],
+									'merchantId' => self::merchantProperty(),
 								],
 							],
 							'examples' => [
@@ -462,6 +483,30 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	public function getOpenApiComponents(): array
 	{
 		return [];
+	}
+
+	/**
+	 * Obchodník, za kterého se jedná — parametr dotazu. Kolego ho dosazuje sám (nebo posílá hlavičku
+	 * X-Doryo-Za); model ho nemá vymýšlet ani měnit.
+	 * @return array<string, mixed>
+	 */
+	private static function merchantParam(): array
+	{
+		return [
+			'name' => MerchantAdministratorResolver::PARAMETER,
+			'in' => 'query',
+			'required' => false,
+			'description' => self::MERCHANT_DESCRIPTION,
+			'schema' => ['type' => 'string'],
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function merchantProperty(): array
+	{
+		return ['type' => 'string', 'description' => self::MERCHANT_DESCRIPTION];
 	}
 
 	/**
