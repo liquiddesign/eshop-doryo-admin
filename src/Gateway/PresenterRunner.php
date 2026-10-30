@@ -196,12 +196,13 @@ final class PresenterRunner
 	 * formuláře a parametry v adrese ({@see self::swapHttpRequest()}); po průchodu se vrací původní.
 	 * @param array<string, mixed> $params Parametry požadavku (`action`, `do`, parametry akce)
 	 * @param array<string, mixed> $post Tělo POSTu ve tvaru, v jakém by ho poslal prohlížeč
+	 * @param array<string, mixed> $files Nahrávané soubory (`FileUpload`) podle HTML jmen polí, jako `$_FILES` po Nette
 	 * @throws \DoryoApi\Http\ApiException
 	 */
-	public function run(string $presenterName, array $params, array $post = []): RunResult
+	public function run(string $presenterName, array $params, array $post = [], array $files = []): RunResult
 	{
-		$method = $post ? 'POST' : 'GET';
-		[$copy, $originals] = $this->swapHttpRequest($method, $params, $post);
+		$method = $post || $files ? 'POST' : 'GET';
+		[$copy, $originals] = $this->swapHttpRequest($method, $params, $post, $files);
 
 		try {
 			$presenter = $this->presenterFactory->createPresenter($presenterName);
@@ -227,7 +228,9 @@ final class PresenterRunner
 				throw new AbortException();
 			};
 
-			$request = new Request($presenterName, $method, $this->mapEntities($presenterName, $params), $post);
+			// formulář bere odeslaná data z aplikačního požadavku (`Request::getFiles()`), signál jako dropzone
+			// z HTTP požadavku (`getFile()`) — soubory proto jdou do obou
+			$request = new Request($presenterName, $method, $this->mapEntities($presenterName, $params), $post, $files);
 
 			try {
 				$response = $presenter->run($request);
@@ -344,14 +347,15 @@ final class PresenterRunner
 	 * dostanou kopii natrvalo; liší se od originálu jen tím, co je popsané výš.
 	 * @param array<string, mixed> $params
 	 * @param array<string, mixed> $post
+	 * @param array<string, mixed> $files
 	 * @return array{0: \Nette\Http\Request, 1: array<string, object>} kopie a původní služby podle jména
 	 * @throws \DoryoApi\Http\ApiException
 	 */
-	private function swapHttpRequest(string $method, array $params, array $post): array
+	private function swapHttpRequest(string $method, array $params, array $post, array $files = []): array
 	{
 		/** @var \Nette\Http\IRequest $original */
 		$original = $this->container->getByType(IRequest::class);
-		$copy = self::sameSiteCopy($original, $method, $params, $post);
+		$copy = self::sameSiteCopy($original, $method, $params, $post, $files);
 		$originals = [];
 
 		foreach ($this->container->findByType(IRequest::class) as $name) {
@@ -391,15 +395,16 @@ final class PresenterRunner
 	/**
 	 * @param array<string, mixed> $params
 	 * @param array<string, mixed> $post
+	 * @param array<string, mixed> $files
 	 */
-	private static function sameSiteCopy(IRequest $original, string $method, array $params, array $post): HttpRequest
+	private static function sameSiteCopy(IRequest $original, string $method, array $params, array $post, array $files = []): HttpRequest
 	{
 		$headers = \array_change_key_case($original->getHeaders());
 		unset($headers['content-type'], $headers['content-length']);
 		$headers = ['sec-fetch-site' => 'same-origin'] + $headers;
 
 		if ($method === 'POST') {
-			$headers['content-type'] = 'application/x-www-form-urlencoded';
+			$headers['content-type'] = $files ? 'multipart/form-data' : 'application/x-www-form-urlencoded';
 		}
 
 		$query = \array_filter($params, static fn ($value): bool => \is_scalar($value) || \is_array($value));
@@ -407,7 +412,7 @@ final class PresenterRunner
 		return new HttpRequest(
 			$original->getUrl()->withQuery($query),
 			$post,
-			[],
+			$files,
 			[Helpers::StrictCookieName => '1'] + $original->getCookies(),
 			$headers,
 			$method,

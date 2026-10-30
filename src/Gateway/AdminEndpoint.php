@@ -238,6 +238,15 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 										'description' => 'Jméno pole ze schématu => nová hodnota. Jen to, co se mění.',
 										'additionalProperties' => true,
 									],
+									'files' => [
+										'type' => 'object',
+										'description' => 'Pole typu soubor (ve schématu mají „upload") => {"name": "<název>", "content": "<obsah v base64>"}. '
+											. 'Nový soubor nahradí ten dnešní; brána ho nahrává, jen když to e-shop zapnul (maxUploadBytes).',
+										'additionalProperties' => [
+											'type' => 'object',
+											'properties' => ['name' => ['type' => 'string'], 'content' => ['type' => 'string', 'format' => 'byte']],
+										],
+									],
 									'dryRun' => ['type' => 'boolean', 'description' => 'true = jen validace a diff, nic se nezapíše.'],
 									'previewToken' => ['type' => 'string', 'description' => 'Token z předchozího dryRun; u ostrého zápisu povinný.'],
 									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se zapisuje; jde do auditu jen jako popisek.'],
@@ -318,6 +327,12 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									'dryRun' => ['type' => 'boolean'],
 									'previewToken' => ['type' => 'string'],
 									'confirm' => ['type' => 'boolean', 'description' => 'Povinné true u destruktivních akcí.'],
+									'file' => [
+										'type' => 'object',
+										'description' => 'Soubor pro akci, která ho bere (v /v1/admin/pages má „file"), například fotka k produktu: '
+											. '{"name": "<název>", "content": "<obsah v base64>"}.',
+										'properties' => ['name' => ['type' => 'string'], 'content' => ['type' => 'string', 'format' => 'byte']],
+									],
 									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se akce spouští; jde do auditu jen jako popisek.'],
 									'merchantId' => self::merchantProperty(),
 								],

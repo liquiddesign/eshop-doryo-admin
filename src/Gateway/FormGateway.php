@@ -36,6 +36,7 @@ final class FormGateway
 		private PreviewToken $previewToken,
 		private ChangelogRepository $changelogRepository,
 		private DIConnection $connection,
+		private Uploads $uploads,
 	) {
 	}
 
@@ -53,6 +54,7 @@ final class FormGateway
 		return $this->runner->withAdministrator(function () use ($target, $id): array {
 			$form = $id === null ? $this->openNew($target, null) : $this->open($target, $id);
 			$described = FormReader::describe($form, $target->hidden);
+			$described['fields'] = $this->uploadFields($form, $described['fields'], $target->hidden);
 
 			$schema = [
 				'presenter' => $target->presenter,
@@ -127,21 +129,27 @@ final class FormGateway
 			}
 		}
 
-		$values = $body['values'] ?? null;
+		$values = $body['values'] ?? [];
+		$files = $body['files'] ?? [];
 
-		if (!\is_array($values) || !$values) {
-			throw ApiException::badRequest('V těle chybí "values" — objekt „jméno pole => hodnota". '
+		if (!\is_array($files) || ($files && \array_is_list($files))) {
+			throw ApiException::badRequest('"files" je objekt „jméno pole => {"name", "content"}".');
+		}
+
+		if (!\is_array($values) || (!$values && !$files)) {
+			throw ApiException::badRequest('V těle chybí "values" — objekt „jméno pole => hodnota" (soubory jdou do "files"). '
 				. 'Schéma polí vrátí GET ' . $target->getEndpoint() . ($create ? '' : '?id=' . $id));
 		}
 
-		return $this->runner->withAdministrator(function () use ($target, $id, $values, $dryRun, $create, $body): array {
+		return $this->runner->withAdministrator(function () use ($target, $id, $values, $files, $dryRun, $create, $body): array {
 			$form = $create ? $this->openNew($target, $id) : $this->open($target, $id);
 			$before = FormReader::values($form);
 
 			self::apply($form, $values, $target->hidden);
+			$uploads = $this->applyFiles($form, $files, $target->hidden);
 
 			$after = FormReader::values($form);
-			$diff = self::diff($form, $before, $after);
+			$diff = \array_merge(self::diff($form, $before, $after), self::fileDiff($uploads));
 			$changes = self::changes($diff);
 			$scope = ($create ? 'create:' : 'form:') . $target->presenter . '/' . $target->form;
 
@@ -182,7 +190,7 @@ final class FormGateway
 				$before,
 			);
 
-			return $this->write($target, $id, $form, $diff, $create, PresenterRunner::actor($body));
+			return $this->write($target, $id, $form, $uploads, $diff, $create, PresenterRunner::actor($body));
 		});
 	}
 
@@ -190,12 +198,19 @@ final class FormGateway
 	 * Ostrý zápis: druhý průchod presenterem, tentokrát POSTem na signál formuláře, takže se
 	 * odehraje přesně to, co by se stalo po kliknutí na „Uložit" — validace, `onSuccess`,
 	 * flash zprávy i přesměrování.
+	 * @param array<string, array{control: \Nette\Forms\Controls\UploadControl, upload: \Nette\Http\FileUpload, file: array<string, mixed>}> $uploads
 	 * @param array<array<string, mixed>> $diff
 	 * @return array<string, mixed>
 	 */
-	private function write(FormTarget $target, string $id, Form $prepared, array $diff, bool $create, ?string $actor): array
+	private function write(FormTarget $target, string $id, Form $prepared, array $uploads, array $diff, bool $create, ?string $actor): array
 	{
-		$post = self::buildPost($prepared);
+		$post = self::buildPost($prepared, \array_keys($uploads));
+		$filesPost = [];
+
+		foreach ($uploads as $upload) {
+			self::put($filesPost, $upload['control']->getHtmlName(), $upload['upload']);
+		}
+
 		$action = $create ? $target->createAction : $target->action;
 		$params = $create ? ['action' => $action] : ['action' => $action, $target->parameter => $id];
 
@@ -203,6 +218,7 @@ final class FormGateway
 			$target->presenter,
 			$params + ['do' => $target->form . '-submit'],
 			$post,
+			$filesPost,
 		);
 
 		$form = self::component($run->presenter, $target->form);
@@ -416,7 +432,15 @@ final class FormGateway
 				));
 			}
 
-			if ($control->isDisabled() || $control instanceof UploadControl) {
+			if ($control instanceof UploadControl && !$control->isDisabled()) {
+				throw ApiException::badRequest(\sprintf(
+					'Pole „%s" (%s) je soubor — posílá se v „files" jako {"name", "content" (base64)}, ne ve „values".',
+					FormReader::label($control),
+					$name,
+				));
+			}
+
+			if ($control->isDisabled()) {
 				throw new ApiException(403, 'Pole je jen ke čtení', \sprintf(
 					'Pole „%s" (%s) je ve formuláři vypnuté, měnit se nedá — zápis se proto neprovedl. '
 						. 'Buď jde o pole, které u existujícího záznamu měnit nelze, nebo roli chybí „Plný přístup" '
@@ -437,6 +461,112 @@ final class FormGateway
 				));
 			}
 		}
+	}
+
+	/**
+	 * Soubory z „files": jen pole typu soubor, která formulář má, nejsou vypnutá ani schovaná.
+	 * @param array<mixed> $files
+	 * @param list<string> $hidden
+	 * @return array<string, array{control: \Nette\Forms\Controls\UploadControl, upload: \Nette\Http\FileUpload, file: array<string, mixed>}>
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	private function applyFiles(Form $form, array $files, array $hidden): array
+	{
+		$controls = FormReader::controls($form, $hidden);
+		$uploads = [];
+
+		foreach ($files as $name => $spec) {
+			$name = (string) $name;
+			$control = $controls[$name] ?? null;
+
+			if (!$control instanceof UploadControl) {
+				throw ApiException::badRequest(\sprintf(
+					$control === null ? 'Pole „%s" formulář nemá.' : 'Pole „%s" není soubor — patří do „values".',
+					$name,
+				));
+			}
+
+			if ($control->isDisabled()) {
+				throw new ApiException(403, 'Pole je jen ke čtení', \sprintf('Pole „%s" je ve formuláři vypnuté.', FormReader::label($control)));
+			}
+
+			$uploads[$name] = ['control' => $control] + $this->uploads->read($spec, FormReader::label($control), self::wantsImage($control));
+		}
+
+		return $uploads;
+	}
+
+	/**
+	 * Řádky rozdílu pro nahrávané soubory: dnešní název souboru → nový, s popisem nového (velikost, typ, rozměry).
+	 * @param array<string, array{control: \Nette\Forms\Controls\UploadControl, upload: \Nette\Http\FileUpload, file: array<string, mixed>}> $uploads
+	 * @return array<array<string, mixed>>
+	 */
+	private static function fileDiff(array $uploads): array
+	{
+		$diff = [];
+
+		foreach ($uploads as $name => $upload) {
+			$diff[] = [
+				'field' => $name,
+				'label' => FormReader::label($upload['control']),
+				'from' => self::currentUpload($upload['control']),
+				'to' => $upload['file']['name'],
+				'file' => $upload['file'],
+			];
+		}
+
+		return $diff;
+	}
+
+	/**
+	 * Pole schématu: u souborů, když brána nahrávání umí, místo „jen ke čtení" popis, jak soubor poslat.
+	 * @param array<array<string, mixed>> $fields
+	 * @param list<string> $hidden
+	 * @return array<array<string, mixed>>
+	 */
+	private function uploadFields(Form $form, array $fields, array $hidden): array
+	{
+		if (!$this->uploads->isEnabled()) {
+			return $fields;
+		}
+
+		$controls = FormReader::controls($form, $hidden);
+
+		foreach ($fields as $i => $field) {
+			$control = $controls[(string) ($field['name'] ?? '')] ?? null;
+
+			if (!$control instanceof UploadControl || $control->isDisabled()) {
+				continue;
+			}
+
+			unset($fields[$i]['readOnly'], $fields[$i]['readOnlyReason']);
+			$fields[$i]['upload'] = [
+				'image' => self::wantsImage($control),
+				'current' => self::currentUpload($control),
+				'note' => 'Soubor pošli v těle jako "files": {"' . $field['name'] . '": {"name": "<název>", "content": "<base64>"}}; '
+					. 'nový soubor nahradí ten dnešní.',
+			];
+		}
+
+		return $fields;
+	}
+
+	/**
+	 * Bere pole jen obrázek? Výběr obrázku z liquiddesign/forms vždy, obyčejné pole s pravidlem `Form::Image`.
+	 */
+	private static function wantsImage(UploadControl $control): bool
+	{
+		if (\is_a($control, \Forms\Controls\UploadImage::class)) {
+			return true;
+		}
+
+		foreach ($control->getRules() as $rule) {
+			if ($rule->validator === Form::Image) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -502,7 +632,8 @@ final class FormGateway
 		$changes = [];
 
 		foreach ($diff as $row) {
-			$changes[(string) $row['field']] = $row['to'];
+			// u souboru se token váže na obsah, ne na název — jiný soubor téhož jména je jiný zápis
+			$changes[(string) $row['field']] = isset($row['file']['sha256']) ? 'file:' . $row['file']['sha256'] : $row['to'];
 		}
 
 		return $changes;
@@ -573,9 +704,10 @@ final class FormGateway
 	 * Složí tělo POSTu přesně tak, jak by ho poslal prohlížeč — včetně polí, která se nemění.
 	 * Formulář jinak nezměněná pole vyprázdní, stejně jako by to udělal ručně odeslaný formulář
 	 * s prázdnými vstupy.
+	 * @param list<string> $uploading Pole, do kterých jde nový soubor
 	 * @return array<string, mixed>
 	 */
-	private static function buildPost(Form $form): array
+	private static function buildPost(Form $form, array $uploading = []): array
 	{
 		$post = [];
 
@@ -589,7 +721,9 @@ final class FormGateway
 				// skryté textové pole s jeho názvem a `upload()` ho při uložení bez nového souboru vrátí zpátky.
 				// Bez něj vrátí null a `onSuccess` název v záznamu přepíše na prázdno — každé uložení akce přes
 				// API by ji připravilo o obrázek i katalog. Nový soubor brána nahrát neumí, starý tedy zůstává.
-				$current = self::currentUpload($control);
+				// Nahrává-li se do pole nový soubor, název starého se posílat nesmí: `UploadImage::upload()` dá
+				// textové hodnotě přednost a nový soubor by tiše zahodil.
+				$current = \in_array(FormReader::name($control), $uploading, true) ? null : self::currentUpload($control);
 
 				if ($current !== null) {
 					self::put($post, $control->getHtmlName(), $current);

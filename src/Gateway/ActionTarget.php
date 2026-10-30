@@ -16,6 +16,9 @@ final class ActionTarget
 	 * @param array<string> $params Jména parametrů signálu v pořadí, v jakém je bere `handle*`
 	 * @param class-string<\StORM\Entity>|null $entity Entita, které se signál týká — kvůli
 	 *     kontrole existence a popisu záznamu v náhledu
+	 * @param string|null $file HTML jméno souboru, který signál čte z požadavku (`getFile('file')` u nahrávání
+	 *     fotek přes dropzone); null = signál soubor nebere
+	 * @param bool $fileImage Soubor musí být obrázek
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -27,6 +30,8 @@ final class ActionTarget
 		public readonly ?string $entity,
 		public readonly ?string $idParam,
 		public readonly bool $customerEmail = false,
+		public readonly ?string $file = null,
+		public readonly bool $fileImage = false,
 	) {
 	}
 
