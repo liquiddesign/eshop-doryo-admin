@@ -160,6 +160,7 @@ final class FormGateway
 					'diff' => $diff,
 					'errors' => $errors,
 					'warnings' => self::warnings($form, $diff, $target->hidden),
+					'customerEmail' => $target->customerEmail,
 				];
 
 				if ($create) {

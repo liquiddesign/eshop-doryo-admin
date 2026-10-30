@@ -64,6 +64,8 @@ typu.
 | `bulkConfirmFrom` | `50` | od kolika cílů chce hromadná úprava `"confirm": true`; dá se přebít u gridu |
 | `merchantAdministrators` | `false` | požadavek za obchodníka jede pod jeho administrátorským účtem, viz [Identita](#identita-kdo-zapisuje) |
 | `merchantColumn` | `fk_merchant` | sloupec tabulky administrátorů s vazbou na obchodníka |
+| `emailAdministrators` | `false` | požadavek s hlavičkou `X-Doryo-Email` jede pod administrátorem s tímtéž loginem, viz [Identita](#identita-kdo-zapisuje) |
+| `administratorEmails` | `[]` | párování e-mail → login účtu administrace, kde login není e-mail |
 | `identityResolver` | `null` | vlastní `DoryoAdmin\Gateway\IdentityResolver` projektu (přebíjí `merchantAdministrators`) |
 | `administratorService` | `null` | jméno služby `Admin\Administrator`, když jich je víc |
 | `registerEndpoint` | `true` | cesty se samy přidají do `doryoApi: endpoints:` |
@@ -77,12 +79,15 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 
 | položka | klíče (výchozí) |
 | --- | --- |
-| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání), `createNote` |
-| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam` |
+| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`) |
+| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
 
 \* povinné
+
+`customerEmail: true` u formuláře nebo akce říká, že uložení či spuštění pošle e-mail zákazníkovi (změna stavu objednávky,
+storno, odkaz na nové heslo). Brána ho vrací v náhledu i v mapě stránek a Kolego to na kartě řekne nahoře.
 
 ### Příklad: For Baby
 
@@ -162,8 +167,13 @@ a do auditu jde ona. Mapa stránek ji vrací v `identity`.
   - obchodník s víc účty → 403 (brána neví, čí role platí),
   - vypnutý účet → 403, neznámý obchodník → 404,
   - obchodník poslaný na víc místech a pokaždé jiný → 400.
-- **Vlastní resolver**: `identityResolver: App\Doryo\MyResolver` — třeba až Kolego začne posílat
-  identitu člověka.
+- **Člověk podle e-mailu** (`emailAdministrators: true`): hlavičku `X-Doryo-Email` posílá Kolego jen za člověka,
+  jehož e-mail potvrdil Google, a jen s platným tokenem. Brána se přihlásí jako administrátor, jehož účet má login
+  rovný tomu e-mailu (nebo login z `administratorEmails`). Platí jeho role a do auditu jde on. Bez hlavičky (agent,
+  automatizace) jede požadavek dál výchozí cestou — servisní účet, případně administrátor obchodníka.
+  - člověk bez účtu v administraci → 403 s návodem (servisní účet nepoužije — má širší práva),
+  - vypnutý účet → 403.
+- **Vlastní resolver**: `identityResolver: App\Doryo\MyResolver`.
 
 Audit (`admin_changelog`): `user` = `<login administrátora> via Kolego (<actor>)`, `entity` = presenter,
 `objectId` = id záznamu, `type` = `form:<akce>`, `signal:<signál>` nebo `bulk:<grid>:<počet>`.

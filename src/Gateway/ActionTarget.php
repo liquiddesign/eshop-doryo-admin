@@ -26,6 +26,7 @@ final class ActionTarget
 		public readonly bool $destructive,
 		public readonly ?string $entity,
 		public readonly ?string $idParam,
+		public readonly bool $customerEmail = false,
 	) {
 	}
 

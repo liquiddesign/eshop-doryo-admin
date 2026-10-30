@@ -92,6 +92,10 @@ final class PageMap
 				'create' => $form->create,
 			];
 
+			if ($form->customerEmail) {
+				$described['customerEmail'] = true;
+			}
+
 			if ($form->create) {
 				$described['createSchema'] = 'GET ' . $form->getEndpoint();
 
@@ -131,7 +135,7 @@ final class PageMap
 				'destructive' => $action->destructive,
 				'params' => $action->params,
 				'endpoint' => 'POST ' . $action->getEndpoint(),
-			];
+			] + ($action->customerEmail ? ['customerEmail' => true] : []);
 		}
 
 		foreach ($this->describers as $describer) {

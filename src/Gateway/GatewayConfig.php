@@ -67,6 +67,7 @@ final class GatewayConfig
 				entity: isset($form['entity']) ? (string) $form['entity'] : null,
 				createNote: (string) ($form['createNote'] ?? ''),
 				hidden: \array_values(\array_map('\strval', (array) ($form['hidden'] ?? []))),
+				customerEmail: (bool) ($form['customerEmail'] ?? false),
 			);
 
 			$this->forms[self::key($target->presenter, $target->form)] = $target;
@@ -82,6 +83,7 @@ final class GatewayConfig
 				destructive: (bool) ($action['destructive'] ?? false),
 				entity: isset($action['entity']) ? (string) $action['entity'] : null,
 				idParam: isset($action['idParam']) ? (string) $action['idParam'] : null,
+				customerEmail: (bool) ($action['customerEmail'] ?? false),
 			);
 
 			$this->actions[self::key($target->presenter, $target->signal)] = $target;
