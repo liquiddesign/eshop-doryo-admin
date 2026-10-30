@@ -19,7 +19,6 @@ use Nette\Forms\Form;
 use Nette\Utils\Arrays;
 use Nette\Utils\Strings;
 use StORM\DIConnection;
-use StORM\Entity;
 use StORM\Meta\Column;
 use StORM\Meta\RelationNxN;
 
@@ -49,9 +48,6 @@ use StORM\Meta\RelationNxN;
  */
 final class BulkGateway
 {
-	/** Kolik cílů se vypíše jmenovitě; zbytek je jen počet, jinak by odpověď u filtru utekla. */
-	private const SAMPLE = 20;
-
 	private const MODE_ADD = 'add';
 	private const MODE_REPLACE = 'replace';
 	private const MODE_REMOVE = 'remove';
@@ -129,7 +125,7 @@ final class BulkGateway
 
 		$dryRun = (bool) ($body['dryRun'] ?? false);
 		$filter = $byFilter ? self::readFilter($body['filter']) : [];
-		$given = $byIds ? self::readIds($body['ids']) : [];
+		$given = $byIds ? GridTargets::readIds($body['ids']) : [];
 
 		return $this->runner->withAdministrator(function () use ($target, $body, $dryRun, $byFilter, $filter, $given): array {
 			// hromadná úprava mění data, ale `checkRequirements()` u akce `bulkEdit` kontroluje jen
@@ -145,7 +141,7 @@ final class BulkGateway
 				GridReader::assertFilters($grid, $filter, $target->getEndpoint());
 			}
 
-			$ids = $byFilter ? self::resolve($grid) : self::assertVisible($grid, $given);
+			$ids = $byFilter ? self::resolve($grid) : GridTargets::assertVisible($grid, $given);
 
 			if (!$ids) {
 				throw ApiException::badRequest('Filtr nevrací žádný záznam, hromadná úprava by na nic nesáhla. '
@@ -154,9 +150,9 @@ final class BulkGateway
 
 			$plan = $this->readPlan($target, $form, $body['values'] ?? null);
 			$changes = self::describeChanges($form, $plan);
-			$targets = $this->describeTargets($target, $ids);
+			$targets = GridTargets::sample($this->connection, $target->entity, $ids);
 			$scope = 'bulk:' . $target->presenter . '/' . $target->grid;
-			$fingerprint = self::fingerprint($ids);
+			$fingerprint = GridTargets::fingerprint($ids);
 			$state = $this->state($target, $ids, $plan);
 			$requiresConfirm = \count($ids) > $target->confirmFrom;
 
@@ -484,72 +480,6 @@ final class BulkGateway
 	}
 
 	/**
-	 * Kolik cílů to je a pár z nich jmenovitě, ať uživatel v náhledu čte firmy, a ne uuid.
-	 * @param array<string> $ids
-	 * @return array<string, mixed>
-	 */
-	private function describeTargets(BulkTarget $target, array $ids): array
-	{
-		$sample = [];
-		$repository = $this->connection->findRepository($target->entity);
-		$pk = $repository->getStructure()->getPK()->getName();
-
-		foreach ($repository->many()->where('this.' . $pk, \array_slice($ids, 0, self::SAMPLE))->toArray() as $id => $entity) {
-			$row = ['id' => (string) $id];
-
-			foreach (['code', 'company', 'name', 'fullname'] as $property) {
-				$value = self::property($entity, $property);
-
-				if ($value === null || $value === '') {
-					continue;
-				}
-
-				$row[$property] = $value;
-
-				break;
-			}
-
-			$sample[] = $row;
-		}
-
-		return [
-			'count' => \count($ids),
-			'sample' => $sample,
-			'truncated' => \count($ids) > self::SAMPLE,
-		];
-	}
-
-	/**
-	 * Jsou všechna poslaná id v gridu — tedy v tom, co identita v administraci vidí? Neexistující
-	 * nebo cizí se nedá tiše přeskočit: uživatel by dostal „hotovo" u záznamů, na které se nesáhlo.
-	 *
-	 * Kontroluje se proti zdroji gridu, ne proti repozitáři: projekt v něm omezuje, co kdo vidí
-	 * (For Baby obchodníkovi jen jeho zákazníky). Admin 2.1 sám u vztahů N:N sahá přímo přes
-	 * `RelationCollection` na poslaná id a zdroj gridu neřeší, takže bez téhle kontroly by šlo
-	 * obchodníkovi přidat ceník i cizímu zákazníkovi.
-	 * @param array<string> $ids
-	 * @return array<string>
-	 * @throws \DoryoApi\Http\ApiException
-	 */
-	private static function assertVisible(AdminGrid $grid, array $ids): array
-	{
-		$source = $grid->getSource();
-		$idName = $grid->getSourceIdName();
-		$column = \str_contains($idName, '.') ? $idName : $source->getPrefix() . $idName;
-		$visible = \array_map('\strval', $source->where($column, $ids)->toArrayOf($idName));
-		$missing = \array_values(\array_diff($ids, $visible));
-
-		if ($missing) {
-			throw ApiException::notFound(\sprintf(
-				'Tahle id v seznamu nejsou — neexistují, nebo je účet, za který brána jedná, v administraci nevidí: %s.',
-				\implode(', ', $missing),
-			));
-		}
-
-		return $ids;
-	}
-
-	/**
 	 * Cílová id podle filtrů gridu — přesně ta množina, kterou by člověk viděl ve výpisu.
 	 * @return array<string>
 	 */
@@ -660,18 +590,6 @@ final class BulkGateway
 		}
 
 		return $changes;
-	}
-
-	/**
-	 * Otisk cílové množiny. Na pořadí nezáleží, na obsahu ano — token se tím váže na přesně ty
-	 * záznamy, které uživatel v náhledu viděl.
-	 * @param array<string> $ids
-	 */
-	private static function fingerprint(array $ids): string
-	{
-		\sort($ids);
-
-		return Strings::substring(\hash('sha256', \implode('|', $ids)), 0, 32);
 	}
 
 	/**
@@ -870,40 +788,6 @@ final class BulkGateway
 		$examples['endpoint'] = 'POST ' . $target->getEndpoint();
 
 		return $examples;
-	}
-
-	private static function property(Entity $entity, string $property): ?string
-	{
-		try {
-			$value = $entity->getValue($property);
-		} catch (\Throwable) {
-			return null;
-		}
-
-		return \is_scalar($value) ? (string) $value : null;
-	}
-
-	/**
-	 * @return array<string>
-	 * @throws \DoryoApi\Http\ApiException
-	 */
-	private static function readIds(mixed $ids): array
-	{
-		if (!\is_array($ids) || !$ids || !\array_is_list($ids)) {
-			throw ApiException::badRequest('Parametr "ids" musí být neprázdné pole id záznamů.');
-		}
-
-		$result = [];
-
-		foreach ($ids as $id) {
-			if (!\is_scalar($id) || (string) $id === '') {
-				throw ApiException::badRequest('Parametr "ids" smí obsahovat jen id záznamů.');
-			}
-
-			$result[] = (string) $id;
-		}
-
-		return \array_values(\array_unique($result));
 	}
 
 	/**

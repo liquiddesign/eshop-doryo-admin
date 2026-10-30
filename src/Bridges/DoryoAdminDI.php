@@ -8,6 +8,7 @@ use Admin\Administrator;
 use DoryoAdmin\Gateway\ActionGateway;
 use DoryoAdmin\Gateway\AdminEndpoint;
 use DoryoAdmin\Gateway\BulkGateway;
+use DoryoAdmin\Gateway\DeleteGateway;
 use DoryoAdmin\Gateway\EmailAdministratorResolver;
 use DoryoAdmin\Gateway\FormGateway;
 use DoryoAdmin\Gateway\GatewayConfig;
@@ -117,6 +118,16 @@ final class DoryoAdminDI extends CompilerExtension
 				'bulkConfirmFrom' => Expect::int()->min(1)->nullable(),
 				'filters' => Expect::arrayOf('string', 'string'),
 			])->castTo('array')),
+			// mazání z gridu tlačítkem „Smazat" nad vybranými řádky; vždy náhled, token a "confirm": true
+			'delete' => Expect::listOf(Expect::structure([
+				'presenter' => Expect::string()->required(),
+				'grid' => Expect::string('grid'),
+				'action' => Expect::string('default'),
+				'label' => Expect::string()->nullable(),
+				'entity' => Expect::string()->required(),
+				// co smazání znamená, pro model a kartu („produkt zmizí z webu i z feedů")
+				'description' => Expect::string(''),
+			])->castTo('array')),
 		]);
 	}
 
@@ -133,6 +144,7 @@ final class DoryoAdminDI extends CompilerExtension
 				'actions' => $config->actions,
 				'bulk' => $config->bulk,
 				'grids' => $config->grids,
+				'delete' => $config->delete,
 				'previewTokenLifetime' => $config->previewTokenLifetime,
 				'bulkConfirmFrom' => $config->bulkConfirmFrom,
 				'agentName' => $config->agentName,
@@ -181,6 +193,7 @@ final class DoryoAdminDI extends CompilerExtension
 		$builder->addDefinition($this->prefix('actionGateway'))->setFactory(ActionGateway::class);
 		$builder->addDefinition($this->prefix('bulkGateway'))->setFactory(BulkGateway::class);
 		$builder->addDefinition($this->prefix('gridGateway'))->setFactory(GridGateway::class);
+		$builder->addDefinition($this->prefix('deleteGateway'))->setFactory(DeleteGateway::class);
 		$builder->addDefinition($this->prefix('endpoint'))->setFactory(AdminEndpoint::class);
 	}
 

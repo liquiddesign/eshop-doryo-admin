@@ -8,7 +8,7 @@ use DoryoApi\Http\ApiException;
 
 /**
  * Co smí agent v administraci: účet, pod kterým brána jede, a whitelist formulářů, signálů,
- * hromadných úprav a čitelných seznamů.
+ * hromadných úprav, čitelných seznamů a mazání.
  *
  * Whitelist je schválně konfigurace, ne kód — další stránka se přidává v sekci `doryoAdmin:`
  * bez zásahu do PHP. Oprávnění se tím neřeší: ta drží role účtu agenta v Administrace → Role,
@@ -20,7 +20,7 @@ final class GatewayConfig
 	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
 	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
 	 */
-	public const VERSION = '0.1.0';
+	public const VERSION = '0.2.0';
 
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];
@@ -34,12 +34,16 @@ final class GatewayConfig
 	/** @var array<string, \DoryoAdmin\Gateway\GridTarget> */
 	private array $grids = [];
 
+	/** @var array<string, \DoryoAdmin\Gateway\DeleteTarget> */
+	private array $deletes = [];
+
 	/**
 	 * @param string $administratorLogin Login administrátorského účtu, pod kterým brána jede
 	 * @param array<array<string, mixed>> $forms
 	 * @param array<array<string, mixed>> $actions
 	 * @param array<array<string, mixed>> $bulk
 	 * @param array<array<string, mixed>> $grids Seznamy administrace, které smí agent číst
+	 * @param array<array<string, mixed>> $delete Gridy, ze kterých smí agent mazat
 	 * @param int $previewTokenLifetime Platnost náhledového tokenu v sekundách
 	 * @param int $bulkConfirmFrom Výchozí práh, od kolika cílů chce hromadná úprava potvrzení
 	 * @param string $agentName Jméno agenta do auditu („<administrátor> via Kolego")
@@ -50,6 +54,7 @@ final class GatewayConfig
 		array $actions = [],
 		array $bulk = [],
 		array $grids = [],
+		array $delete = [],
 		private int $previewTokenLifetime = 600,
 		private int $bulkConfirmFrom = 50,
 		private string $agentName = 'Kolego',
@@ -117,6 +122,19 @@ final class GatewayConfig
 			);
 
 			$this->grids[self::key($target->presenter, $target->grid)] = $target;
+		}
+
+		foreach ($delete as $item) {
+			$target = new DeleteTarget(
+				presenter: (string) $item['presenter'],
+				grid: (string) ($item['grid'] ?? 'grid'),
+				action: (string) ($item['action'] ?? 'default'),
+				label: (string) ($item['label'] ?? $item['presenter']),
+				entity: (string) $item['entity'],
+				description: (string) ($item['description'] ?? ''),
+			);
+
+			$this->deletes[self::key($target->presenter, $target->grid)] = $target;
 		}
 	}
 
@@ -208,12 +226,25 @@ final class GatewayConfig
 	}
 
 	/**
-	 * Formuláře, akce, hromadné úpravy a seznamy patřící k jedné stránce administrace.
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	public function getDelete(string $presenter, string $grid): DeleteTarget
+	{
+		return $this->deletes[self::key($presenter, $grid)] ?? throw ApiException::notFound(\sprintf(
+			'Mazání z %s/%s brána nezná. Co umí, vypíše /v1/admin/pages.',
+			$presenter,
+			$grid,
+		));
+	}
+
+	/**
+	 * Formuláře, akce, hromadné úpravy, seznamy a mazání patřící k jedné stránce administrace.
 	 * @return array{
 	 *     forms: array<\DoryoAdmin\Gateway\FormTarget>,
 	 *     actions: array<\DoryoAdmin\Gateway\ActionTarget>,
 	 *     bulks: array<\DoryoAdmin\Gateway\BulkTarget>,
-	 *     grids: array<\DoryoAdmin\Gateway\GridTarget>
+	 *     grids: array<\DoryoAdmin\Gateway\GridTarget>,
+	 *     deletes: array<\DoryoAdmin\Gateway\DeleteTarget>
 	 * }
 	 */
 	public function getPage(string $presenter): array
@@ -223,6 +254,7 @@ final class GatewayConfig
 			'actions' => \array_values(\array_filter($this->actions, static fn (ActionTarget $t): bool => $t->presenter === $presenter)),
 			'bulks' => \array_values(\array_filter($this->bulks, static fn (BulkTarget $t): bool => $t->presenter === $presenter)),
 			'grids' => \array_values(\array_filter($this->grids, static fn (GridTarget $t): bool => $t->presenter === $presenter)),
+			'deletes' => \array_values(\array_filter($this->deletes, static fn (DeleteTarget $t): bool => $t->presenter === $presenter)),
 		];
 	}
 
