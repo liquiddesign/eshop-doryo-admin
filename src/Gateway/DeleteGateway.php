@@ -93,7 +93,7 @@ final class DeleteGateway
 					. 'a ukaž uživateli, co zmizí.',
 			);
 
-			return $this->delete($target, $params, $ids, $records, PresenterRunner::actor($body));
+			return $this->delete($target, $params, $ids, GridTargets::encodeIds($grid, $ids), $records, PresenterRunner::actor($body));
 		});
 	}
 
@@ -101,17 +101,18 @@ final class DeleteGateway
 	 * Ostrý běh: POST na formulář gridu s vybranými řádky a tlačítkem „Smazat".
 	 * @param array<string, string> $params Parametry stránky gridu (akce, záznam, záložka) — stejné jako v náhledu
 	 * @param array<string> $ids
+	 * @param array<string> $selected Tatáž id zakódovaná jako v zaškrtávátkách gridu ({@see GridTargets::encodeIds()})
 	 * @param array<string, mixed> $records
 	 * @return array<string, mixed>
 	 * @throws \DoryoApi\Http\ApiException
 	 */
-	private function delete(DeleteTarget $target, array $params, array $ids, array $records, ?string $actor): array
+	private function delete(DeleteTarget $target, array $params, array $ids, array $selected, array $records, ?string $actor): array
 	{
 		$run = $this->runner->run(
 			$target->presenter,
 			$params + ['do' => $target->grid . '-form-submit'],
-			// zaškrtávátko řádku nese jako hodnotu id; `getSelectedIds()` bere hodnoty pole `__selector`
-			['__selector' => \array_combine($ids, $ids), self::SUBMIT => 'Smazat'],
+			// zaškrtávátko řádku nese jako hodnotu (zakódované) id; `getSelectedIds()` bere hodnoty pole `__selector`
+			['__selector' => \array_combine($selected, $selected), self::SUBMIT => 'Smazat'],
 		);
 
 		$remaining = GridTargets::existing($this->connection, $target->entity, $ids);

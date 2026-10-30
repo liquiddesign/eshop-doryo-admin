@@ -6,6 +6,7 @@ namespace DoryoAdmin\Gateway;
 
 use Admin\Controls\AdminGrid;
 use DoryoApi\Http\ApiException;
+use Grid\Datagrid;
 use Nette\Utils\Strings;
 use StORM\DIConnection;
 use StORM\Entity;
@@ -83,6 +84,24 @@ final class GridTargets
 		$column = \str_contains($idName, '.') ? $idName : $source->getPrefix() . $idName;
 
 		return \array_map('\strval', $source->where($column, $ids)->toArrayOf($idName));
+	}
+
+	/**
+	 * Id tak, jak je grid nese v zaškrtávátkách řádků. AdminGrid se většinou zakládá s `encodeId`
+	 * (id jako `bin2hex`) a `getSelectedIds()` poslané hodnoty dekóduje — holé id by se po dekódování
+	 * nenašlo a administrace by řádek tiše přeskočila. Callback je chráněný a getter nemá, proto reflexe.
+	 * @param array<string> $ids
+	 * @return array<string>
+	 */
+	public static function encodeIds(Datagrid $grid, array $ids): array
+	{
+		$encode = (new \ReflectionProperty(Datagrid::class, 'encodeIdCallback'))->getValue($grid);
+
+		if (!\is_callable($encode)) {
+			return $ids;
+		}
+
+		return \array_map(static fn (string $id): string => (string) $encode($id), $ids);
 	}
 
 	/**
