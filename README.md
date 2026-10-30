@@ -83,7 +83,7 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 | `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
-| `delete` | `presenter`*, `entity`* (entita řádků — podle ní brána popíše a po smazání ověří, co zmizelo), `grid` (`grid`), `action` (`default`), `label`, `description` (co smazání znamená) |
+| `delete` | `presenter`*, `entity`* (entita řádků — podle ní brána popíše a po smazání ověří, co zmizelo), `grid` (`grid`), `action` (`default`), `label`, `description` (co smazání znamená), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 
 \* povinné
 
@@ -299,7 +299,9 @@ odešle formulář gridu s `__selector` a `deleteAll` jako prohlížeč, takže 
 (systémové stránky), úklid v `onDelete` (fotky a soubory produktu) i omezení zdroje gridu. Grid bez
 toho tlačítka (jen koš u řádku) brána mazat neumí: akce řádku má v gridu jen pořadové číslo.
 
-Náhled vrátí `records` (počet, ukázka 20 záznamů) a token vázaný na otisk množiny; ostrý běh chce
+Seznam, který patří k záznamu nebo má záložky, bere v těle `id` a `tab` stejně jako jeho čtení
+(`GET /v1/admin/grids/…`). Náhled vrátí `records` (počet, ukázka 20 záznamů) a token vázaný na otisk
+množiny i na `id` a `tab`; ostrý běh chce
 token i `"confirm": true` vždy, ne až od prahu. Smazání chce na stránce „Plný přístup" (777).
 `addButtonDeleteSelected` hlásí „Provedeno" i tehdy, když část záznamů nesmazal (cizí klíč, podmínka)
 — brána proto po běhu zjistí, co v tabulce zůstalo: `deleted`, `deletedIds`, `remaining`, `complete`.

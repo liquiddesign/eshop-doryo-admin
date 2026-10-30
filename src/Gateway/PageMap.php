@@ -145,6 +145,8 @@ final class PageMap
 				'description' => $delete->description,
 				'endpoint' => 'POST ' . $delete->getEndpoint(),
 				'destructive' => true,
+				'requiresId' => $delete->parameter !== null,
+				'tabs' => $delete->tabParameter !== null,
 			];
 		}
 

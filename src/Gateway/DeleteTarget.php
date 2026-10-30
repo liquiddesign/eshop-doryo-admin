@@ -21,6 +21,10 @@ final class DeleteTarget
 	 * @param class-string<\StORM\Entity> $entity Entita řádků gridu — podle ní brána popíše, co maže,
 	 *     a po smazání ověří, co opravdu zmizelo
 	 * @param string $description Co smazání znamená, pro model a kartu („produkt zmizí z webu i z feedů")
+	 * @param string|null $parameter Parametr akce se záznamem, ke kterému seznam patří (`carousel` u slidů);
+	 *     null = seznam stojí sám
+	 * @param string|null $tabParameter Persistentní parametr presenteru se záložkou (`tab` u menu a kategorií);
+	 *     null = seznam záložky nemá
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -29,6 +33,8 @@ final class DeleteTarget
 		public readonly string $label,
 		public readonly string $entity,
 		public readonly string $description,
+		public readonly ?string $parameter = null,
+		public readonly ?string $tabParameter = null,
 	) {
 	}
 

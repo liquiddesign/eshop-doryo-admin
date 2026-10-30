@@ -127,6 +127,8 @@ final class DoryoAdminDI extends CompilerExtension
 				'entity' => Expect::string()->required(),
 				// co smazání znamená, pro model a kartu („produkt zmizí z webu i z feedů")
 				'description' => Expect::string(''),
+				'parameter' => Expect::string()->nullable(),
+				'tabParameter' => Expect::string()->nullable(),
 			])->castTo('array')),
 		]);
 	}

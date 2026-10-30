@@ -368,6 +368,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 								'required' => ['ids'],
 								'properties' => [
 									'ids' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Id mazaných záznamů (z gridu).'],
+									'id' => ['type' => 'string', 'description' => 'Id záznamu, ke kterému seznam patří (v /v1/admin/pages „requiresId": true) — např. slider u slidů.'],
+									'tab' => ['type' => 'string', 'description' => 'Záložka seznamu, který ji má („tabs": true) — např. typ menu nebo kategorií. Stejná jako při čtení gridu.'],
 									'dryRun' => ['type' => 'boolean'],
 									'previewToken' => ['type' => 'string'],
 									'confirm' => ['type' => 'boolean', 'description' => 'U ostrého běhu povinné true.'],

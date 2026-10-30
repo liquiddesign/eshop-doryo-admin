@@ -132,6 +132,8 @@ final class GatewayConfig
 				label: (string) ($item['label'] ?? $item['presenter']),
 				entity: (string) $item['entity'],
 				description: (string) ($item['description'] ?? ''),
+				parameter: isset($item['parameter']) ? (string) $item['parameter'] : null,
+				tabParameter: isset($item['tabParameter']) ? (string) $item['tabParameter'] : null,
 			);
 
 			$this->deletes[self::key($target->presenter, $target->grid)] = $target;
