@@ -62,6 +62,7 @@ final class ActionGateway
 					'destructive' => $target->destructive,
 					'record' => $before,
 					'requiresConfirm' => $target->destructive,
+					'customerEmail' => $target->customerEmail,
 					'previewToken' => $preview['token'],
 					'expiresAt' => $preview['expiresAt'],
 					'note' => $target->destructive

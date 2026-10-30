@@ -8,6 +8,8 @@ use Admin\Administrator;
 use DoryoAdmin\Gateway\ActionGateway;
 use DoryoAdmin\Gateway\AdminEndpoint;
 use DoryoAdmin\Gateway\BulkGateway;
+use DoryoAdmin\Gateway\DeleteGateway;
+use DoryoAdmin\Gateway\EmailAdministratorResolver;
 use DoryoAdmin\Gateway\FormGateway;
 use DoryoAdmin\Gateway\GatewayConfig;
 use DoryoAdmin\Gateway\GridGateway;
@@ -52,6 +54,10 @@ final class DoryoAdminDI extends CompilerExtension
 			'merchantAdministrators' => Expect::bool(false),
 			// sloupec tabulky administrátorů s vazbou na obchodníka (For Baby: fk_merchant)
 			'merchantColumn' => Expect::string('fk_merchant')->pattern('[A-Za-z_][A-Za-z0-9_]*'),
+			// člověk z Kolega (hlavička X-Doryo-Email) jede pod administrátorem s tímtéž loginem (nebo podle administratorEmails)
+			'emailAdministrators' => Expect::bool(false),
+			// párování e-mail → login účtu administrace tam, kde login není e-mail
+			'administratorEmails' => Expect::arrayOf('string', 'string'),
 			// vlastní IdentityResolver projektu; přebíjí merchantAdministrators
 			'identityResolver' => self::service()->nullable(),
 			// služba uživatele administrace (Admin\Administrator); null = najde se podle typu
@@ -74,6 +80,8 @@ final class DoryoAdminDI extends CompilerExtension
 				'createNote' => Expect::string(''),
 				// pole, která brána nevydá ani nepřijme (tajné klíče, hesla)
 				'hidden' => Expect::listOf('string'),
+				// uložení formuláře pošle e-mail zákazníkovi (Kolego to řekne na kartě)
+				'customerEmail' => Expect::bool(false),
 			])->castTo('array')),
 			// whitelist signálů (handle*): popis parametrů a význam z kódu vyčíst nejde, proto ručně
 			'actions' => Expect::listOf(Expect::structure([
@@ -85,6 +93,8 @@ final class DoryoAdminDI extends CompilerExtension
 				'destructive' => Expect::bool(false),
 				'entity' => Expect::string()->nullable(),
 				'idParam' => Expect::string()->nullable(),
+				// akce pošle e-mail zákazníkovi (Kolego to řekne na kartě)
+				'customerEmail' => Expect::bool(false),
 			])->castTo('array')),
 			// seznamy (gridy), které smí agent číst; popis je pro model, grid sám zná jen hlavičky
 			'grids' => Expect::listOf(Expect::structure([
@@ -108,6 +118,18 @@ final class DoryoAdminDI extends CompilerExtension
 				'bulkConfirmFrom' => Expect::int()->min(1)->nullable(),
 				'filters' => Expect::arrayOf('string', 'string'),
 			])->castTo('array')),
+			// mazání z gridu tlačítkem „Smazat" nad vybranými řádky; vždy náhled, token a "confirm": true
+			'delete' => Expect::listOf(Expect::structure([
+				'presenter' => Expect::string()->required(),
+				'grid' => Expect::string('grid'),
+				'action' => Expect::string('default'),
+				'label' => Expect::string()->nullable(),
+				'entity' => Expect::string()->required(),
+				// co smazání znamená, pro model a kartu („produkt zmizí z webu i z feedů")
+				'description' => Expect::string(''),
+				'parameter' => Expect::string()->nullable(),
+				'tabParameter' => Expect::string()->nullable(),
+			])->castTo('array')),
 		]);
 	}
 
@@ -124,6 +146,7 @@ final class DoryoAdminDI extends CompilerExtension
 				'actions' => $config->actions,
 				'bulk' => $config->bulk,
 				'grids' => $config->grids,
+				'delete' => $config->delete,
 				'previewTokenLifetime' => $config->previewTokenLifetime,
 				'bulkConfirmFrom' => $config->bulkConfirmFrom,
 				'agentName' => $config->agentName,
@@ -149,6 +172,17 @@ final class DoryoAdminDI extends CompilerExtension
 			$identityResolver = '@' . $this->prefix('merchantAdministrators');
 		}
 
+		if ($config->identityResolver === null && $config->emailAdministrators) {
+			$builder->addDefinition($this->prefix('emailAdministrators'))
+				->setFactory(EmailAdministratorResolver::class, [
+					'fallback' => $identityResolver,
+					'emails' => $config->administratorEmails,
+				])
+				->setAutowired(false);
+
+			$identityResolver = '@' . $this->prefix('emailAdministrators');
+		}
+
 		// uživatel administrace se dosadí v beforeCompile — služba není autowirovaná (shop má i zákaznického uživatele)
 		$builder->addDefinition($this->prefix('runner'))
 			->setFactory(PresenterRunner::class, ['identityResolver' => $identityResolver]);
@@ -161,6 +195,7 @@ final class DoryoAdminDI extends CompilerExtension
 		$builder->addDefinition($this->prefix('actionGateway'))->setFactory(ActionGateway::class);
 		$builder->addDefinition($this->prefix('bulkGateway'))->setFactory(BulkGateway::class);
 		$builder->addDefinition($this->prefix('gridGateway'))->setFactory(GridGateway::class);
+		$builder->addDefinition($this->prefix('deleteGateway'))->setFactory(DeleteGateway::class);
 		$builder->addDefinition($this->prefix('endpoint'))->setFactory(AdminEndpoint::class);
 	}
 

@@ -32,6 +32,7 @@ final class FormTarget
 		public readonly ?string $entity = null,
 		public readonly string $createNote = '',
 		public readonly array $hidden = [],
+		public readonly bool $customerEmail = false,
 	) {
 	}
 

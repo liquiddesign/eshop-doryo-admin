@@ -14,7 +14,7 @@ use DoryoApi\OpenApi\SpecificationPart;
 /**
  * Zápis do e-shopu přes administraci: mapa stránek, schéma a zápis formuláře, spuštění akce.
  *
- * Cesty jsou schválně generické — pět cest místo desítek ručně psaných per doména. Popis
+ * Cesty jsou schválně generické — šest cest místo desítek ručně psaných per doména. Popis
  * konkrétního formuláře si model tahá až na dotaz, což přesně sedí na to, jak s API pracuje
  * konektor v Kolegovi: introspect, najdi endpoint, přečti detail, zavolej.
  *
@@ -28,6 +28,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 	private const ROUTE_ACTIONS = 'v1/admin/actions/{presenter}/{signal}';
 	private const ROUTE_BULK = 'v1/admin/bulk/{presenter}/{grid}';
 	private const ROUTE_GRIDS = 'v1/admin/grids/{presenter}/{grid}';
+	private const ROUTE_DELETE = 'v1/admin/delete/{presenter}/{grid}';
 
 	private const MERCHANT_DESCRIPTION = 'Obchodník, za kterého se jedná (id). Brána se pak přihlásí jako jeho administrátorský '
 		. 'účet, takže platí jeho role i to, co v administraci vidí. Dosazuje ho Kolego (případně hlavička X-Doryo-Za), '
@@ -39,6 +40,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 		private ActionGateway $actionGateway,
 		private BulkGateway $bulkGateway,
 		private GridGateway $gridGateway,
+		private DeleteGateway $deleteGateway,
 		private GatewayConfig $config,
 		private PresenterRunner $runner,
 	) {
@@ -55,6 +57,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 			self::ROUTE_ACTIONS => 'action',
 			self::ROUTE_BULK => 'bulk',
 			self::ROUTE_GRIDS => 'grid',
+			self::ROUTE_DELETE => 'delete',
 		];
 	}
 
@@ -68,6 +71,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 			self::ROUTE_ACTIONS => ['POST'],
 			self::ROUTE_BULK => ['GET', 'HEAD', 'POST'],
 			self::ROUTE_GRIDS => ['GET', 'HEAD'],
+			self::ROUTE_DELETE => ['POST'],
 		];
 	}
 
@@ -130,6 +134,17 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 		$this->runner->identify($query);
 
 		return new Response($this->actionGateway->run($target, $query->getBody() ?? []));
+	}
+
+	/**
+	 * @param array<string, string> $params
+	 */
+	public function delete(array $params, Query $query): Response
+	{
+		$target = $this->config->getDelete($params['presenter'], $params['grid']);
+		$this->runner->identify($query);
+
+		return new Response($this->deleteGateway->submit($target, $query->getBody() ?? []));
 	}
 
 	/**
@@ -330,6 +345,58 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 						'403' => ['description' => 'Role nemá na té stránce plný přístup, nebo administrace záznam neotevřela (účet ho nevidí)'],
 						'409' => ['description' => 'Chybí previewToken, vypršel, nebo se záznam mezitím změnil'],
 						'422' => ['description' => 'Administrace akci odmítla (flash zpráva chyba/varování) — nic se neprovedlo'],
+					],
+				],
+			],
+			'/v1/admin/delete/{presenter}/{grid}' => [
+				'post' => [
+					'summary' => 'Smazání záznamů z gridu administrace',
+					'description' => 'Maže tlačítkem „Smazat" nad vybranými řádky, tedy tak, jak maže člověk: platí podmínky '
+						. 'projektu i úklid po smazání. Vždy dvoufázově: "dryRun": true vypíše, co zmizí, a vydá previewToken; '
+						. 'ostrý běh se stejnými „ids" chce token i "confirm": true. Co administrace nesmaže (záznam je '
+						. 'použitý jinde, projekt to nedovolí), vrátí odpověď v „remaining" — nikdy to nehlásí jako smazané.',
+					'parameters' => [
+						self::pathParam('presenter', 'Jméno presenteru, například Eshop:Admin:Producer.'),
+						self::pathParam('grid', 'Jméno gridu podle /v1/admin/pages (klíč „delete").'),
+						self::merchantParam(),
+					],
+					'requestBody' => [
+						'required' => true,
+						'content' => ['application/json' => [
+							'schema' => [
+								'type' => 'object',
+								'required' => ['ids'],
+								'properties' => [
+									'ids' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Id mazaných záznamů (z gridu).'],
+									'id' => ['type' => 'string', 'description' => 'Id záznamu, ke kterému seznam patří (v /v1/admin/pages „requiresId": true) — např. slider u slidů.'],
+									'tab' => ['type' => 'string', 'description' => 'Záložka seznamu, který ji má („tabs": true) — např. typ menu nebo kategorií. Stejná jako při čtení gridu.'],
+									'dryRun' => ['type' => 'boolean'],
+									'previewToken' => ['type' => 'string'],
+									'confirm' => ['type' => 'boolean', 'description' => 'U ostrého běhu povinné true.'],
+									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se maže; jde do auditu jen jako popisek.'],
+									'merchantId' => self::merchantProperty(),
+								],
+							],
+							'example' => ['ids' => ['a1b2c3d4'], 'dryRun' => true],
+						]],
+					],
+					'responses' => [
+						'200' => [
+							'description' => 'Náhled (dryRun) nebo provedené smazání',
+							'content' => ['application/json' => ['example' => [
+								'dryRun' => false,
+								'deleted' => 1,
+								'deletedIds' => ['a1b2c3d4'],
+								'remaining' => [],
+								'complete' => true,
+								'records' => ['count' => 1, 'sample' => [['id' => 'a1b2c3d4', 'name' => 'Mamut']], 'truncated' => false],
+							]]],
+						],
+						'400' => ['description' => 'Chybí "confirm": true u ostrého běhu'],
+						'403' => ['description' => 'Role nemá na té stránce plný přístup'],
+						'404' => ['description' => 'Některé id v gridu není (neexistuje, nebo ho účet nevidí), nebo grid mazání nemá'],
+						'409' => ['description' => 'Chybí previewToken, vypršel, nebo ostrý běh maže jiné záznamy než náhled'],
+						'422' => ['description' => 'Administrace nesmazala ani jeden záznam'],
 					],
 				],
 			],

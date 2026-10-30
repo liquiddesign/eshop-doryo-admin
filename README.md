@@ -3,7 +3,7 @@
 Zápis do administrace e-shopu pro [Doryo / Kolego](https://lqd.kolego.cz). Rozšiřuje balík
 [`liquiddesign/eshop-doryo-api`](https://github.com/liquiddesign/eshop-doryo-api) (čtecí API)
 o cesty `/v1/admin/…`, přes které agent čte seznamy administrace, vyplňuje její formuláře,
-spouští její akce a dělá hromadné úpravy — se stejnými kontrolami a stejnými následky, jako kdyby
+spouští její akce, dělá hromadné úpravy a maže z gridů — se stejnými kontrolami a stejnými následky, jako kdyby
 to člověk naklikal v `/admin`.
 
 **Nic se nekopíruje.** Brána spouští presentery administrace normální cestou Nette
@@ -64,6 +64,8 @@ typu.
 | `bulkConfirmFrom` | `50` | od kolika cílů chce hromadná úprava `"confirm": true`; dá se přebít u gridu |
 | `merchantAdministrators` | `false` | požadavek za obchodníka jede pod jeho administrátorským účtem, viz [Identita](#identita-kdo-zapisuje) |
 | `merchantColumn` | `fk_merchant` | sloupec tabulky administrátorů s vazbou na obchodníka |
+| `emailAdministrators` | `false` | požadavek s hlavičkou `X-Doryo-Email` jede pod administrátorem s tímtéž loginem, viz [Identita](#identita-kdo-zapisuje) |
+| `administratorEmails` | `[]` | párování e-mail → login účtu administrace, kde login není e-mail |
 | `identityResolver` | `null` | vlastní `DoryoAdmin\Gateway\IdentityResolver` projektu (přebíjí `merchantAdministrators`) |
 | `administratorService` | `null` | jméno služby `Admin\Administrator`, když jich je víc |
 | `registerEndpoint` | `true` | cesty se samy přidají do `doryoApi: endpoints:` |
@@ -77,12 +79,16 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 
 | položka | klíče (výchozí) |
 | --- | --- |
-| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání), `createNote` |
-| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam` |
+| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`) |
+| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
+| `delete` | `presenter`*, `entity`* (entita řádků — podle ní brána popíše a po smazání ověří, co zmizelo), `grid` (`grid`), `action` (`default`), `label`, `description` (co smazání znamená), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 
 \* povinné
+
+`customerEmail: true` u formuláře nebo akce říká, že uložení či spuštění pošle e-mail zákazníkovi (změna stavu objednávky,
+storno, odkaz na nové heslo). Brána ho vrací v náhledu i v mapě stránek a Kolego to na kartě řekne nahoře.
 
 ### Příklad: For Baby
 
@@ -162,11 +168,16 @@ a do auditu jde ona. Mapa stránek ji vrací v `identity`.
   - obchodník s víc účty → 403 (brána neví, čí role platí),
   - vypnutý účet → 403, neznámý obchodník → 404,
   - obchodník poslaný na víc místech a pokaždé jiný → 400.
-- **Vlastní resolver**: `identityResolver: App\Doryo\MyResolver` — třeba až Kolego začne posílat
-  identitu člověka.
+- **Člověk podle e-mailu** (`emailAdministrators: true`): hlavičku `X-Doryo-Email` posílá Kolego jen za člověka,
+  jehož e-mail potvrdil Google, a jen s platným tokenem. Brána se přihlásí jako administrátor, jehož účet má login
+  rovný tomu e-mailu (nebo login z `administratorEmails`). Platí jeho role a do auditu jde on. Bez hlavičky (agent,
+  automatizace) jede požadavek dál výchozí cestou — servisní účet, případně administrátor obchodníka.
+  - člověk bez účtu v administraci → 403 s návodem (servisní účet nepoužije — má širší práva),
+  - vypnutý účet → 403.
+- **Vlastní resolver**: `identityResolver: App\Doryo\MyResolver`.
 
 Audit (`admin_changelog`): `user` = `<login administrátora> via Kolego (<actor>)`, `entity` = presenter,
-`objectId` = id záznamu, `type` = `form:<akce>`, `signal:<signál>` nebo `bulk:<grid>:<počet>`.
+`objectId` = id záznamu, `type` = `form:<akce>`, `signal:<signál>`, `bulk:<grid>:<počet>` nebo `delete:<grid>:<počet smazaných>`.
 `actor` z těla vyplňuje model — je to jen popisek, oprávnění na něm nestojí.
 
 Náhledový token je vázaný i na identitu: náhled, který viděl jeden obchodník, nezapíše jiný ani
@@ -187,6 +198,7 @@ v `openapi.json` (schémata těla inline, Kolego `$ref` v těle neresolvuje).
 | `GET /v1/admin/grids/{presenter}/{grid}` | stránka seznamu: text buněk pod hlavičkami, `filter` (JSON), `page`, `limit` (≤ 100), `order`, `id`, `tab` |
 | `GET /v1/admin/bulk/{presenter}/{grid}` | co umí hromadná úprava: vstupy s režimy, filtry, práh potvrzení |
 | `POST /v1/admin/bulk/{presenter}/{grid}` | hromadná úprava nad `ids` nebo `filter`; náhled a pak ostrý zápis |
+| `POST /v1/admin/delete/{presenter}/{grid}` | smazání `ids` tlačítkem „Smazat" gridu; náhled, pak ostrý běh s tokenem a `"confirm": true` |
 
 Všechny cesty berou `merchantId` (viz [Identita](#identita-kdo-zapisuje)).
 
@@ -275,6 +287,26 @@ Ostrý zápis posílá vždycky výčet id (`bulkType = selected`), i když byl 
 filtr vyhodnotil znovu a zapsal do množiny, kterou nikdo neschválil. Výčet `ids` se ověřuje proti
 zdroji gridu, tedy proti tomu, co identita vidí; cizí nebo neexistující id je 404.
 
+### Mazání
+
+```http
+POST /doryo-api/v1/admin/delete/Eshop:Admin:Producer/grid
+{"ids": ["a1"], "dryRun": true}
+```
+
+Maže se tlačítkem „Smazat" nad vybranými řádky (`AdminGrid::addButtonDeleteSelected()`) — brána
+odešle formulář gridu s `__selector` a `deleteAll` jako prohlížeč, takže platí podmínka projektu
+(systémové stránky), úklid v `onDelete` (fotky a soubory produktu) i omezení zdroje gridu. Grid bez
+toho tlačítka (jen koš u řádku) brána mazat neumí: akce řádku má v gridu jen pořadové číslo.
+
+Seznam, který patří k záznamu nebo má záložky, bere v těle `id` a `tab` stejně jako jeho čtení
+(`GET /v1/admin/grids/…`). Náhled vrátí `records` (počet, ukázka 20 záznamů) a token vázaný na otisk
+množiny i na `id` a `tab`; ostrý běh chce
+token i `"confirm": true` vždy, ne až od prahu. Smazání chce na stránce „Plný přístup" (777).
+`addButtonDeleteSelected` hlásí „Provedeno" i tehdy, když část záznamů nesmazal (cizí klíč, podmínka)
+— brána proto po běhu zjistí, co v tabulce zůstalo: `deleted`, `deletedIds`, `remaining`, `complete`.
+Nesmaže-li administrace nic, je to 422.
+
 ### Chybové stavy
 
 | kód | kdy |
@@ -340,7 +372,8 @@ zdroji gridu, tedy proti tomu, co identita vidí; cizí nebo neexistující id j
 
 - **Upload souborů** brána neumí (pole typu `file` jsou `readOnly`); u uloženého obrázku nebo
   souboru se při zápisu pošle jeho současný název, takže zůstává.
-- **Mazání záznamů** a inline editace v gridech (`addColumnInput*`, „Uložit vše") cesty nemají.
+- **Mazání** jen z gridů s tlačítkem „Smazat" nad výběrem; koš u jednoho řádku (`addColumnActionDelete`
+  bez `addButtonDeleteSelected`) a inline editace v gridech (`addColumnInput*`, „Uložit vše") cesty nemají.
 - Pole s datem: posílá se jako `Y-m-d H:i:s`; formát je potřeba ověřit, až takový formulář přibude.
 - Selecty plněné AJAXem mají v číselníku jen počet položek — posílá se id.
 - Signály se do whitelistu píšou ručně: `handle*` nenese popis parametrů ani významu.

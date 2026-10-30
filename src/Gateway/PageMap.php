@@ -56,7 +56,7 @@ final class PageMap
 			'version' => GatewayConfig::version(),
 			'items' => $items,
 			'note' => 'Vypisují se jen stránky, na které smí účet z „identity". Měnit jde to, co má vyplněné „forms", '
-				. '„actions" nebo „bulk", číst jde, co má „grids"; další klíče u stránky jsou cesty projektu. U ostatních '
+				. '„actions" nebo „bulk", mazat, co má „delete", číst jde, co má „grids"; další klíče u stránky jsou cesty projektu. U ostatních '
 				. 'stránek brána jen ví, že existují. Formulář s „create": true umí i zakládat nový záznam — přečti si '
 				. 'u něj „createNote".',
 		];
@@ -91,6 +91,10 @@ final class PageMap
 				'write' => 'POST ' . $form->getEndpoint(),
 				'create' => $form->create,
 			];
+
+			if ($form->customerEmail) {
+				$described['customerEmail'] = true;
+			}
 
 			if ($form->create) {
 				$described['createSchema'] = 'GET ' . $form->getEndpoint();
@@ -131,6 +135,18 @@ final class PageMap
 				'destructive' => $action->destructive,
 				'params' => $action->params,
 				'endpoint' => 'POST ' . $action->getEndpoint(),
+			] + ($action->customerEmail ? ['customerEmail' => true] : []);
+		}
+
+		foreach ($page['deletes'] as $delete) {
+			$row['delete'][] = [
+				'grid' => $delete->grid,
+				'label' => $delete->label,
+				'description' => $delete->description,
+				'endpoint' => 'POST ' . $delete->getEndpoint(),
+				'destructive' => true,
+				'requiresId' => $delete->parameter !== null,
+				'tabs' => $delete->tabParameter !== null,
 			];
 		}
 
