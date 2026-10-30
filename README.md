@@ -2,7 +2,7 @@
 
 Zápis do administrace e-shopu pro [Doryo / Kolego](https://lqd.kolego.cz). Rozšiřuje balík
 [`liquiddesign/eshop-doryo-api`](https://github.com/liquiddesign/eshop-doryo-api) (čtecí API)
-o cesty `/v1/admin/…`, přes které agent čte seznamy administrace, vyplňuje její formuláře,
+o cesty `/v1/admin/…`, přes které agent čte seznamy administrace, vyplňuje její formuláře (i se soubory),
 spouští její akce, dělá hromadné úpravy a maže z gridů — se stejnými kontrolami a stejnými následky, jako kdyby
 to člověk naklikal v `/admin`.
 
@@ -62,6 +62,7 @@ typu.
 | `agentName` | `Kolego` | jméno agenta do auditu: `<administrátor> via Kolego (<actor>)` |
 | `previewTokenLifetime` | `600` | platnost náhledového tokenu v sekundách |
 | `bulkConfirmFrom` | `50` | od kolika cílů chce hromadná úprava `"confirm": true`; dá se přebít u gridu |
+| `maxUploadBytes` | `0` | strop nahrávaného souboru v bajtech; `0` = brána soubory nenahrává (pole souborů jsou jen ke čtení) |
 | `merchantAdministrators` | `false` | požadavek za obchodníka jede pod jeho administrátorským účtem, viz [Identita](#identita-kdo-zapisuje) |
 | `merchantColumn` | `fk_merchant` | sloupec tabulky administrátorů s vazbou na obchodníka |
 | `emailAdministrators` | `false` | požadavek s hlavičkou `X-Doryo-Email` jede pod administrátorem s tímtéž loginem, viz [Identita](#identita-kdo-zapisuje) |
@@ -80,7 +81,7 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 | položka | klíče (výchozí) |
 | --- | --- |
 | `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`) |
-| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`) |
+| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`), `file` (HTML jméno souboru, který signál čte z požadavku), `fileImage` (`false`) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
 | `delete` | `presenter`*, `entity`* (entita řádků — podle ní brána popíše a po smazání ověří, co zmizelo), `grid` (`grid`), `action` (`default`), `label`, `description` (co smazání znamená), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
@@ -287,6 +288,21 @@ Ostrý zápis posílá vždycky výčet id (`bulkType = selected`), i když byl 
 filtr vyhodnotil znovu a zapsal do množiny, kterou nikdo neschválil. Výčet `ids` se ověřuje proti
 zdroji gridu, tedy proti tomu, co identita vidí; cizí nebo neexistující id je 404.
 
+### Nahrávání souborů
+
+Jen s `maxUploadBytes` > 0. Soubor jde v JSON těle jako `{"name": "<název>", "content": "<base64>"}`:
+
+- **pole souboru ve formuláři** (ve schématu má `upload` místo `readOnly`) v `"files": {"<pole>": {…}}` vedle
+  `values`. Nový soubor nahradí ten dnešní — brána v tom případě neposílá název dnešního (u `UploadImage` by mu
+  `upload()` dal přednost). Výběr obrázku z liquiddesign/forms a pole s pravidlem `Form::Image` berou jen obrázek
+  (podle obsahu, jinak 422);
+- **akce, která soubor bere** (`file:` ve whitelistu, v mapě stránek `file`), v `"file": {…}` — například
+  `handleDropzoneUploadPhoto` produktu (`file: file`, `fileImage: true`); JSON, kterým signál odpoví, je v `response`.
+
+Náhled vrátí u souboru `file` (název, velikost, typ podle obsahu, rozměry obrázku, `sha256`) a token se váže na
+obsah: ostrý zápis s jiným souborem je 409. Soubor jde do administrace jako `FileUpload` nad dočasným souborem —
+do aplikačního požadavku (formulář) i do HTTP požadavku (signál) — a dočasné soubory se na konci požadavku mažou.
+
 ### Mazání
 
 ```http
@@ -370,8 +386,8 @@ Nesmaže-li administrace nic, je to 422.
 
 ## Omezení
 
-- **Upload souborů** brána neumí (pole typu `file` jsou `readOnly`); u uloženého obrázku nebo
-  souboru se při zápisu pošle jeho současný název, takže zůstává.
+- **Nahrávání** je vypnuté, dokud ho e-shop nezapne (`maxUploadBytes`); bez nového souboru se u uloženého obrázku
+  nebo souboru při zápisu pošle jeho současný název, takže zůstává. Mazání fotek z galerie (signály `delete…`) brána nedělá.
 - **Mazání** jen z gridů s tlačítkem „Smazat" nad výběrem; koš u jednoho řádku (`addColumnActionDelete`
   bez `addButtonDeleteSelected`) a inline editace v gridech (`addColumnInput*`, „Uložit vše") cesty nemají.
 - Pole s datem: posílá se jako `Y-m-d H:i:s`; formát je potřeba ověřit, až takový formulář přibude.

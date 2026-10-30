@@ -18,6 +18,7 @@ use DoryoAdmin\Gateway\PageMap;
 use DoryoAdmin\Gateway\PresenterRunner;
 use DoryoAdmin\Gateway\PreviewToken;
 use DoryoAdmin\Gateway\ServiceAccountResolver;
+use DoryoAdmin\Gateway\Uploads;
 use DoryoApi\Bridges\DoryoApiDI;
 use Nette\DI\CompilerExtension;
 use Nette\DI\Definitions\Reference;
@@ -49,6 +50,8 @@ final class DoryoAdminDI extends CompilerExtension
 			'previewTokenLifetime' => Expect::int(600)->min(60),
 			// od kolika cílů chce hromadná úprava potvrzení; dá se přebít u konkrétního gridu
 			'bulkConfirmFrom' => Expect::int(50)->min(1),
+			// strop nahrávaného souboru v bajtech (pole souborů ve formulářích, akce s `file`); 0 = nahrávání vypnuté
+			'maxUploadBytes' => Expect::int(0)->min(0),
 			// požadavek s obchodníkem (X-Doryo-Za / merchantId) jede pod jeho administrátorským účtem;
 			// vypnuto = brána jede jen pod servisním účtem a požadavek za obchodníka odmítne
 			'merchantAdministrators' => Expect::bool(false),
@@ -95,6 +98,9 @@ final class DoryoAdminDI extends CompilerExtension
 				'idParam' => Expect::string()->nullable(),
 				// akce pošle e-mail zákazníkovi (Kolego to řekne na kartě)
 				'customerEmail' => Expect::bool(false),
+				// HTML jméno souboru, který signál čte z požadavku (dropzone: `file`); jen s maxUploadBytes > 0
+				'file' => Expect::string()->nullable(),
+				'fileImage' => Expect::bool(false),
 			])->castTo('array')),
 			// seznamy (gridy), které smí agent číst; popis je pro model, grid sám zná jen hlavičky
 			'grids' => Expect::listOf(Expect::structure([
@@ -150,6 +156,7 @@ final class DoryoAdminDI extends CompilerExtension
 				'previewTokenLifetime' => $config->previewTokenLifetime,
 				'bulkConfirmFrom' => $config->bulkConfirmFrom,
 				'agentName' => $config->agentName,
+				'maxUploadBytes' => $config->maxUploadBytes,
 			]);
 
 		// resolvery se předávají runneru výslovně: jsou to dvě služby téhož rozhraní
@@ -188,6 +195,7 @@ final class DoryoAdminDI extends CompilerExtension
 			->setFactory(PresenterRunner::class, ['identityResolver' => $identityResolver]);
 
 		$builder->addDefinition($this->prefix('previewToken'))->setFactory(PreviewToken::class);
+		$builder->addDefinition($this->prefix('uploads'))->setFactory(Uploads::class, ['maxBytes' => $config->maxUploadBytes]);
 		$builder->addDefinition($this->prefix('pageMap'))->setFactory(PageMap::class, [
 			'describers' => \array_map(self::serviceArgument(...), $config->describers),
 		]);

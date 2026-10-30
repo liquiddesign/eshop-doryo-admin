@@ -135,7 +135,7 @@ final class PageMap
 				'destructive' => $action->destructive,
 				'params' => $action->params,
 				'endpoint' => 'POST ' . $action->getEndpoint(),
-			] + ($action->customerEmail ? ['customerEmail' => true] : []);
+			] + ($action->customerEmail ? ['customerEmail' => true] : []) + ($action->file !== null ? ['file' => ['image' => $action->fileImage]] : []);
 		}
 
 		foreach ($page['deletes'] as $delete) {

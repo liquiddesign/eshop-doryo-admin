@@ -205,7 +205,7 @@ final class FormReader
 
 		if ($control instanceof UploadControl) {
 			$field['readOnly'] = true;
-			$field['readOnlyReason'] = 'Nahrávání souborů brána v první fázi neumí.';
+			$field['readOnlyReason'] = 'Nahrávání souborů má brána na tomhle e-shopu vypnuté (doryoAdmin: maxUploadBytes).';
 		}
 
 		if ($items === null) {

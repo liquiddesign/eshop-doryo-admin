@@ -6,6 +6,7 @@ namespace DoryoAdmin\Gateway;
 
 use Admin\DB\ChangelogRepository;
 use DoryoApi\Http\ApiException;
+use Nette\Application\Responses\JsonResponse;
 use StORM\DIConnection;
 use StORM\Entity;
 
@@ -24,6 +25,7 @@ final class ActionGateway
 		private PreviewToken $previewToken,
 		private ChangelogRepository $changelogRepository,
 		private DIConnection $connection,
+		private Uploads $uploads,
 	) {
 	}
 
@@ -35,10 +37,22 @@ final class ActionGateway
 	{
 		$params = self::readParams($target, $body);
 		$dryRun = (bool) ($body['dryRun'] ?? false);
+
+		if ($target->file === null && isset($body['file'])) {
+			throw ApiException::badRequest(\sprintf('Akce „%s" soubor nebere.', $target->label));
+		}
+
+		if ($target->file !== null && !isset($body['file'])) {
+			throw ApiException::badRequest(\sprintf('Akce „%s" nahrává soubor — v těle chybí "file": {"name", "content" (base64)}.', $target->label));
+		}
+
+		$upload = $target->file !== null ? $this->uploads->read($body['file'], $target->label, $target->fileImage) : null;
+		// token se váže i na obsah souboru: ostrý běh s jiným souborem, než ukázal náhled, je 409
+		$signed = $upload !== null ? $params + ['file' => 'file:' . $upload['file']['sha256']] : $params;
 		$id = $target->idParam !== null ? (string) $params[$target->idParam] : '';
 		$resource = ':' . $target->presenter . ':' . $target->action;
 
-		return $this->runner->withAdministrator(function () use ($target, $body, $params, $dryRun, $id, $resource): array {
+		return $this->runner->withAdministrator(function () use ($target, $body, $params, $signed, $upload, $dryRun, $id, $resource): array {
 			$this->runner->assertManager($resource, $target->label);
 
 			if ($dryRun) {
@@ -53,9 +67,9 @@ final class ActionGateway
 			$scope = 'action:' . $target->presenter . '/' . $target->signal;
 
 			if ($dryRun) {
-				$preview = $this->previewToken->issue($scope, $id, $params, $before);
+				$preview = $this->previewToken->issue($scope, $id, $signed, $before);
 
-				return [
+				return ($upload !== null ? ['file' => $upload['file']] : []) + [
 					'dryRun' => true,
 					'action' => $target->signal,
 					'label' => $target->label,
@@ -82,11 +96,16 @@ final class ActionGateway
 				\is_string($body['previewToken'] ?? null) ? $body['previewToken'] : null,
 				$scope,
 				$id,
-				$params,
+				$signed,
 				$before,
 			);
 
-			$run = $this->runner->run($target->presenter, ['action' => $target->action, 'do' => $target->signal] + $params);
+			$run = $this->runner->run(
+				$target->presenter,
+				['action' => $target->action, 'do' => $target->signal] + $params,
+				[],
+				$upload !== null ? [(string) $target->file => $upload['upload']] : [],
+			);
 
 			// Levior: tady kontrola chyběla a akce vracela „executed": true i tehdy, když ji
 			// administrace odmítla — signály odmítnutí hlásí flash zprávou a přesměrováním, ne
@@ -109,7 +128,7 @@ final class ActionGateway
 				'type' => 'signal:' . $target->signal,
 			]);
 
-			return [
+			$result = [
 				'dryRun' => false,
 				'executed' => true,
 				'action' => $target->signal,
@@ -118,6 +137,18 @@ final class ActionGateway
 				'after' => $this->describe($target, $id),
 				'flashes' => $run->flashes,
 			];
+
+			if ($upload !== null) {
+				$result['file'] = $upload['file'];
+			}
+
+			// signály dropzone odpovídají JSONem (název uloženého souboru, náhled) — model ho potřebuje třeba
+			// k dalšímu kroku „nastav jako hlavní"
+			if ($run->response instanceof JsonResponse) {
+				$result['response'] = $run->response->getPayload();
+			}
+
+			return $result;
 		});
 	}
 

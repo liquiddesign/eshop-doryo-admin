@@ -20,7 +20,7 @@ final class GatewayConfig
 	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
 	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
 	 */
-	public const VERSION = '0.2.0';
+	public const VERSION = '0.3.0';
 
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];
@@ -47,6 +47,7 @@ final class GatewayConfig
 	 * @param int $previewTokenLifetime Platnost náhledového tokenu v sekundách
 	 * @param int $bulkConfirmFrom Výchozí práh, od kolika cílů chce hromadná úprava potvrzení
 	 * @param string $agentName Jméno agenta do auditu („<administrátor> via Kolego")
+	 * @param int $maxUploadBytes Strop nahrávaného souboru; 0 = brána soubory nenahrává
 	 */
 	public function __construct(
 		private string $administratorLogin,
@@ -58,6 +59,7 @@ final class GatewayConfig
 		private int $previewTokenLifetime = 600,
 		private int $bulkConfirmFrom = 50,
 		private string $agentName = 'Kolego',
+		private int $maxUploadBytes = 0,
 	) {
 		foreach ($forms as $form) {
 			$target = new FormTarget(
@@ -89,6 +91,8 @@ final class GatewayConfig
 				entity: isset($action['entity']) ? (string) $action['entity'] : null,
 				idParam: isset($action['idParam']) ? (string) $action['idParam'] : null,
 				customerEmail: (bool) ($action['customerEmail'] ?? false),
+				file: isset($action['file']) ? (string) $action['file'] : null,
+				fileImage: (bool) ($action['fileImage'] ?? false),
 			);
 
 			$this->actions[self::key($target->presenter, $target->signal)] = $target;
@@ -148,6 +152,11 @@ final class GatewayConfig
 	public function getAgentName(): string
 	{
 		return $this->agentName;
+	}
+
+	public function getMaxUploadBytes(): int
+	{
+		return $this->maxUploadBytes;
 	}
 
 	public function getPreviewTokenLifetime(): int
