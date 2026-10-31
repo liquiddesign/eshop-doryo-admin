@@ -20,7 +20,7 @@ final class GatewayConfig
 	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
 	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
 	 */
-	public const VERSION = '0.3.0';
+	public const VERSION = '0.4.0';
 
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];
@@ -75,6 +75,8 @@ final class GatewayConfig
 				createNote: (string) ($form['createNote'] ?? ''),
 				hidden: \array_values(\array_map('\strval', (array) ($form['hidden'] ?? []))),
 				customerEmail: (bool) ($form['customerEmail'] ?? false),
+				znacka: isset($form['znacka']) ? (string) $form['znacka'] : null,
+				bublina: \array_values(\array_map('\strval', (array) ($form['bublina'] ?? []))),
 			);
 
 			$this->forms[self::key($target->presenter, $target->form)] = $target;
@@ -284,6 +286,45 @@ final class GatewayConfig
 		} catch (\Throwable) {
 			return self::VERSION;
 		}
+	}
+
+	/**
+	 * Formuláře se značkou na webu (Kolego nad e-shopem): druh → formulář. Druh smí mít jen jeden formulář —
+	 * dva by rozšíření nerozlišilo, proto to spadne už při startu.
+	 *
+	 * @return array<string, \DoryoAdmin\Gateway\FormTarget>
+	 */
+	public function getZnacky(): array
+	{
+		$out = [];
+
+		foreach ($this->forms as $form) {
+			if ($form->znacka === null) {
+				continue;
+			}
+
+			if (isset($out[$form->znacka])) {
+				throw new \LogicException(\sprintf('doryoAdmin: značku „%s" mají dva formuláře (%s a %s).', $form->znacka, $out[$form->znacka]->getEndpoint(), $form->getEndpoint()));
+			}
+
+			$out[$form->znacka] = $form;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Druh značky pro entitu ze šablony (`n:kolego="$product"`): formulář, jehož `entity` entita je (i potomek).
+	 */
+	public function getZnackaEntity(object $entity): ?FormTarget
+	{
+		foreach ($this->getZnacky() as $form) {
+			if ($form->entity !== null && $entity instanceof $form->entity) {
+				return $form;
+			}
+		}
+
+		return null;
 	}
 
 	private static function key(string $presenter, string $name): string

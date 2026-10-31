@@ -19,8 +19,11 @@ use DoryoAdmin\Gateway\PresenterRunner;
 use DoryoAdmin\Gateway\PreviewToken;
 use DoryoAdmin\Gateway\ServiceAccountResolver;
 use DoryoAdmin\Gateway\Uploads;
+use DoryoAdmin\Latte\KolegoExtension;
 use DoryoApi\Bridges\DoryoApiDI;
+use Nette\Bridges\ApplicationLatte\LatteFactory;
 use Nette\DI\CompilerExtension;
+use Nette\DI\Definitions\FactoryDefinition;
 use Nette\DI\Definitions\Reference;
 use Nette\DI\Definitions\ServiceDefinition;
 use Nette\DI\Definitions\Statement;
@@ -67,6 +70,8 @@ final class DoryoAdminDI extends CompilerExtension
 			'administratorService' => Expect::string()->nullable(),
 			// cesty /v1/admin/… se samy přidají do doryoApi: endpoints:; false = projekt si je přidá sám
 			'registerEndpoint' => Expect::bool(true),
+			// makro n:kolego v šablonách webu (značky pro rozšíření Kolego); false = projekt si ho do Latte přidá sám
+			'latte' => Expect::bool(true),
 			// projektové doplňky mapy stránek: služby implementující DoryoAdmin\Gateway\PageDescriber
 			'describers' => Expect::listOf(self::service()),
 			// whitelist formulářů; `create` povoluje i zakládání přes akci `createAction`
@@ -85,6 +90,10 @@ final class DoryoAdminDI extends CompilerExtension
 				'hidden' => Expect::listOf('string'),
 				// uložení formuláře pošle e-mail zákazníkovi (Kolego to řekne na kartě)
 				'customerEmail' => Expect::bool(false),
+				// druh značky na webu (n:kolego v šabloně) — rozšíření Kolego podle ní pozná, čím se prvek mění
+				'znacka' => Expect::string()->pattern('[a-z][a-z0-9-]{0,30}')->nullable(),
+				// pole, která rozšíření ukáže v bublině u prvku na webu
+				'bublina' => Expect::listOf('string'),
 			])->castTo('array')),
 			// whitelist signálů (handle*): popis parametrů a význam z kódu vyčíst nejde, proto ručně
 			'actions' => Expect::listOf(Expect::structure([
@@ -218,11 +227,33 @@ final class DoryoAdminDI extends CompilerExtension
 		$administrator = $config->administratorService !== null ? \ltrim($config->administratorService, '@') : $this->findAdministratorService();
 		$runner->setArgument('administrator', '@' . $administrator);
 
+		if ($config->latte) {
+			$this->registerLatte();
+		}
+
 		if (!$config->registerEndpoint) {
 			return;
 		}
 
 		$this->registerEndpoint();
+	}
+
+	/**
+	 * Makro `n:kolego` do každého Latte enginu aplikace (LatteFactory z nette/application). Bez Latte nic.
+	 */
+	private function registerLatte(): void
+	{
+		if (!\interface_exists(LatteFactory::class) || !\class_exists(\Latte\Extension::class)) {
+			return;
+		}
+
+		$builder = $this->getContainerBuilder();
+
+		foreach ($builder->findByType(LatteFactory::class) as $definition) {
+			if ($definition instanceof FactoryDefinition) {
+				$definition->getResultDefinition()->addSetup('addExtension', [new Statement(KolegoExtension::class, ['config' => '@' . $this->prefix('config')])]);
+			}
+		}
 	}
 
 	/**
