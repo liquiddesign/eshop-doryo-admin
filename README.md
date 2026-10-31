@@ -81,7 +81,7 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 
 | položka | klíče (výchozí) |
 | --- | --- |
-| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání a značkám), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`), `znacka` (druh značky na webu), `bublina` (pole do bubliny u prvku), `createParameter` (parametr zakládací akce s nadřazeným záznamem), `item` (formulář jedné položky záznamu, viz níž) |
+| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání a značkám), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`), `znacka` (druh značky na webu), `bublina` (pole do bubliny u prvku), `createParameter` (parametr zakládací akce s nadřazeným záznamem), `item` (formulář jedné položky záznamu, viz níž), `popisky` (popisky polí bez vlastního popisku, viz níž) |
 | `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`), `file` (HTML jméno souboru, který signál čte z požadavku), `fileImage` (`false`), `item` (akce nad položkou záznamu) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
@@ -246,7 +246,7 @@ POST /doryo-api/v1/admin/forms/Eshop:Admin:Customer/form
   "previewToken": "eyJ2Ijoi….9f3c", "expiresAt": "2026-10-12T14:32:00+02:00",
   "diff": [{"field": "phone", "label": "Telefon", "from": "+420 602 111 222", "to": "+420 601 000 111"}],
   "errors": [],
-  "warnings": ["Pole „Ceníky\" jsou v tomhle formuláři jen ke čtení; pokus o jejich změnu skončí chybou 403."]
+  "warnings": []
 }
 ```
 
@@ -280,6 +280,31 @@ POST /doryo-api/v1/admin/forms/Eshop:Admin:Customer/form
   patří (`parent` = sloupec s id záznamu, i přes vztah) — komponenta ani signál to samy nehlídají.
 - **Select bez prázdné volby** a bez hodnoty dostane první možnost, jak by ji odeslal prohlížeč
   (jinak „Vyberte prosím platnou možnost" u podmínek kupónu).
+- **Jen vybraná pole** (0.6): `GET …?id=<id>&fields=prices-*-price,name-cs` — jména oddělená čárkou, `*` = cokoli.
+  Formulář produktu má přes tisíc polí; odpověď nese `fieldsFilter: { vzor, vybrano, celkem }`.
+- **Popisky polí bez popisku** (0.6, `popisky` ve whitelistu): pole pod ceníkem, seznamem nebo skladem formulář skládá
+  z id záznamu (`prices-<ceník>-price`) a popisek nemají. Vzor se zástupkou `{id}` → předpona a entita, jméno se vezme
+  z `name` (jinak `code`) záznamu — jednou za entitu a požadavek. Platí ve schématu i v `diff`; popisek z formuláře vyhrává.
+
+  ```neon
+  popisky:
+      'prices-{id}-price': ['Cena bez DPH', Eshop\DB\Pricelist]          # „Cena bez DPH · KZ – Denbraven"
+      'visibility-list_{id}-recommended': ['Doporučený', Eshop\DB\VisibilityList]
+  ```
+- **Záložka presenteru** (0.6, `tabParameter`, `tabColumn`, `tabFromField`): některé presentery berou při uložení údaj
+  z persistentního parametru v adrese — kategorie strom z `tab` (`$values['type'] = $presenter->tab`). Bez něj ostrý zápis
+  spadl, nebo by záznam přestěhoval do jiného stromu, a náhled to nepoznal (obsluhu uložení nespouští). Brána záložku pošle
+  jako prohlížeč: u úpravy ze sloupce záznamu, u založení z `tab` v těle (schéma `?tab=`), jinak z nadřazeného záznamu.
+
+  ```neon
+  tabParameter: tab        # persistentní parametr presenteru
+  tabColumn: type          # sloupec záznamu s hodnotou záložky
+  tabFromField: ancestor   # u založení: záložka nadřazeného záznamu z tohoto pole
+  ```
+- **Spadlé uložení** (0.6): výjimka z obsluhy formuláře jde do logu (Tracy, `doryo-admin`) a volající dostane 500 s tím, co
+  spadlo („Uložení formuláře „Kategorie" v administraci spadlo (DriverException): …"), ne jen „Požadavek se nepodařilo zpracovat".
+- **Varování** náhledu už nevypisují všechna pole jen ke čtení (0.6): zápis, který na ně sáhne, skončí 403 dřív
+  a schéma je má označená `readOnly` — v náhledu byla jen šum (u produktu ~640 cen s DPH).
 
 ### Akce
 

@@ -38,6 +38,7 @@ final class FormGateway
 		private ChangelogRepository $changelogRepository,
 		private DIConnection $connection,
 		private Uploads $uploads,
+		private Popisky $popisky,
 	) {
 	}
 
@@ -46,22 +47,25 @@ final class FormGateway
 	 * pro založení nového záznamu — to umí jen formulář, který to má v konfiguraci povolené.
 	 * @return array<string, mixed>
 	 */
-	public function schema(FormTarget $target, ?string $id, ?string $item = null, ?string $parent = null): array
+	public function schema(FormTarget $target, ?string $id, ?string $item = null, ?string $parent = null, ?string $fields = null, ?string $tab = null): array
 	{
 		if ($id === null) {
 			self::assertCreatable($target);
 			self::assertParent($target, $parent);
 		}
 
-		return $this->runner->withAdministrator(function () use ($target, $id, $item, $parent): array {
+		return $this->runner->withAdministrator(function () use ($target, $id, $item, $parent, $fields, $tab): array {
 			if ($id !== null && $target->item !== null && $item === null) {
 				return $this->itemList($target, $id);
 			}
 
 			$itemRecord = $id !== null && $target->item !== null ? $target->item->assertBelongs($this->connection, (string) $item, $id) : null;
-			$form = $id === null ? $this->openNew($target, null, $parent) : $this->open($target, $id, $item);
+			$zalozka = $this->zalozka($target, $id, [], $tab);
+			$form = $id === null ? $this->openNew($target, null, $parent, $zalozka) : $this->open($target, $id, $item, $zalozka);
 			$described = FormReader::describe($form, $target->hidden);
-			$described['fields'] = $this->uploadFields($form, $described['fields'], $target->hidden);
+			$described['fields'] = $this->popisky->pole($target, $this->uploadFields($form, $described['fields'], $target->hidden));
+			$celkem = \count($described['fields']);
+			$described['fields'] = self::vyberPoli($described['fields'], $fields);
 
 			$schema = [
 				'presenter' => $target->presenter,
@@ -72,6 +76,7 @@ final class FormGateway
 				'description' => $target->description,
 				'groups' => $described['groups'],
 				'fields' => $described['fields'],
+				...($fields !== null && $fields !== '' ? ['fieldsFilter' => ['vzor' => $fields, 'vybrano' => \count($described['fields']), 'celkem' => $celkem]] : []),
 				'write' => [
 					'endpoint' => 'POST ' . $target->getEndpoint(),
 					'note' => $id === null
@@ -164,7 +169,8 @@ final class FormGateway
 
 		return $this->runner->withAdministrator(function () use ($target, $id, $values, $files, $dryRun, $create, $body, $parent, $item): array {
 			$itemRecord = $item !== null && $target->item !== null ? $target->item->assertBelongs($this->connection, $item, $id) : null;
-			$form = $create ? $this->openNew($target, $id, $parent) : $this->open($target, $id, $item);
+			$zalozka = $this->zalozka($target, $create ? null : $id, $values, self::optionalString($body, 'tab'));
+			$form = $create ? $this->openNew($target, $id, $parent, $zalozka) : $this->open($target, $id, $item, $zalozka);
 			$before = FormReader::values($form);
 
 			self::apply($form, $values, $target->hidden);
@@ -173,7 +179,8 @@ final class FormGateway
 			$after = FormReader::values($form);
 			$diff = \array_merge(self::diff($form, $before, $after), self::fileDiff($uploads));
 			// token se váže i na nadřazený záznam a položku: s jiným „parent" nebo „item" je ostrý zápis 409
-			$changes = self::changes($diff) + \array_filter(['_parent' => $parent, '_item' => $item], static fn (?string $v): bool => $v !== null);
+			$changes = self::changes($diff) + \array_filter(['_parent' => $parent, '_item' => $item, '_tab' => $zalozka ? (string) \reset($zalozka) : null], static fn (?string $v): bool => $v !== null);
+			$diff = $this->popisky->pole($target, $diff);   // popisky až po otisku změn — token se váže na hodnoty, ne na jména
 			$scope = ($create ? 'create:' : 'form:') . $target->presenter . '/' . $target->form;
 
 			if ($dryRun) {
@@ -217,7 +224,7 @@ final class FormGateway
 				$before,
 			);
 
-			$result = $this->write($target, $id, $form, $uploads, $diff, $create, PresenterRunner::actor($body), $parent, $item);
+			$result = $this->write($target, $id, $form, $uploads, $diff, $create, PresenterRunner::actor($body), $parent, $item, $zalozka);
 
 			return $itemRecord !== null ? $result + ['item' => $itemRecord] : $result;
 		});
@@ -231,7 +238,7 @@ final class FormGateway
 	 * @param array<array<string, mixed>> $diff
 	 * @return array<string, mixed>
 	 */
-	private function write(FormTarget $target, string $id, Form $prepared, array $uploads, array $diff, bool $create, ?string $actor, ?string $parent = null, ?string $item = null): array
+	private function write(FormTarget $target, string $id, Form $prepared, array $uploads, array $diff, bool $create, ?string $actor, ?string $parent = null, ?string $item = null, array $zalozka = []): array
 	{
 		$post = self::buildPost($prepared, \array_keys($uploads));
 		$filesPost = [];
@@ -241,15 +248,32 @@ final class FormGateway
 		}
 
 		$action = $create ? $target->createAction : $target->action;
-		$params = $create ? self::createParams($target, $parent) : ['action' => $action, $target->parameter => $id];
+		$params = ($create ? self::createParams($target, $parent) : ['action' => $action, $target->parameter => $id]) + $zalozka;
 		$component = self::componentName($target, $item);
 
-		$run = $this->runner->run(
-			$target->presenter,
-			$params + ['do' => $component . '-submit'],
-			$post,
-			$filesPost,
-		);
+		try {
+			$run = $this->runner->run(
+				$target->presenter,
+				$params + ['do' => $component . '-submit'],
+				$post,
+				$filesPost,
+			);
+		} catch (ApiException $e) {
+			throw $e;
+		} catch (\Throwable $e) {
+			// Uložení spadlo v administraci (obsluha formuláře, databáze). Dřív z toho bylo jen „Požadavek se nepodařilo
+			// zpracovat" bez stopy — teď to jde do logu a volající dostane, co spadlo (Kolego to řekne člověku).
+			if (\class_exists(\Tracy\Debugger::class)) {
+				\Tracy\Debugger::log($e, 'doryo-admin');
+			}
+
+			throw new ApiException(500, 'Administrace zápis nedokončila', \sprintf(
+				'Uložení formuláře „%s" v administraci spadlo (%s): %s. Nic se nezapsalo, pokud administrace nepíše po částech — ověř stav čtením.',
+				$target->label,
+				(new \ReflectionClass($e))->getShortName(),
+				\mb_substr(\trim($e->getMessage()), 0, 300),
+			));
+		}
 
 		$form = self::component($run->presenter, $component);
 
@@ -346,9 +370,9 @@ final class FormGateway
 	/**
 	 * Načte formulář tak, jak ho vidí administrace: s oprávněními role a s hodnotami záznamu.
 	 */
-	private function open(FormTarget $target, string $id, ?string $item = null): Form
+	private function open(FormTarget $target, string $id, ?string $item = null, array $zalozka = []): Form
 	{
-		$run = $this->runner->open($target->presenter, ['action' => $target->action, $target->parameter => $id]);
+		$run = $this->runner->open($target->presenter, ['action' => $target->action, $target->parameter => $id] + $zalozka);
 
 		return self::asBrowser(self::component($run->presenter, self::componentName($target, $item)));
 	}
@@ -408,6 +432,48 @@ final class FormGateway
 	 * Parametry zakládací akce: bez parametru, nebo s nadřazeným záznamem (`discount` u kupónu akce).
 	 * @return array<string, string>
 	 */
+	/**
+	 * Záložka presenteru (`tabParameter`, persistentní parametr — u kategorií typ stromu) tak, jak by ji měl prohlížeč
+	 * v adrese. Administrace z ní u uložení bere, kam záznam patří (`$values['type'] = $presenter->tab`): bez ní ostrý zápis
+	 * spadl (neplatný typ), nebo by záznam přestěhoval do jiného stromu — a náhled to nepoznal, obsluhu uložení nespouští.
+	 * Úprava: ze záznamu (`tabColumn`). Založení: `tab` z těla, jinak z nadřazeného záznamu (`tabFromField`, např. ancestor).
+	 * @param array<mixed> $values
+	 * @return array<string, string> `[tabParameter => hodnota]`, nebo prázdné, když formulář záložku nemá
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	private function zalozka(FormTarget $target, ?string $id, array $values, ?string $tab): array
+	{
+		if ($target->tabParameter === null) {
+			return [];
+		}
+
+		$zeZaznamu = function (?string $pk) use ($target): ?string {
+			if ($pk === null || $pk === '' || $target->entity === null || $target->tabColumn === null) {
+				return null;
+			}
+
+			$zaznam = $this->connection->findRepository($target->entity)->one($pk);
+			$hodnota = $zaznam ? ($zaznam->toArray()[$target->tabColumn] ?? null) : null;
+
+			return \is_scalar($hodnota) && (string) $hodnota !== '' ? (string) $hodnota : null;
+		};
+
+		$hodnota = $id !== null ? $zeZaznamu($id) : null;
+		$hodnota ??= $tab !== null && $tab !== '' ? $tab : null;
+		$hodnota ??= $target->tabFromField !== null && \is_scalar($values[$target->tabFromField] ?? null) ? $zeZaznamu((string) $values[$target->tabFromField]) : null;
+
+		if ($hodnota === null) {
+			throw ApiException::badRequest(\sprintf(
+				'„%s" patří do záložky (%s) — pošli "tab"%s.',
+				$target->label,
+				$target->tabParameter,
+				$target->tabFromField !== null ? \sprintf(' nebo vyplň pole „%s" (záložka se vezme z něj)', $target->tabFromField) : '',
+			));
+		}
+
+		return [$target->tabParameter => $hodnota];
+	}
+
 	private static function createParams(FormTarget $target, ?string $parent): array
 	{
 		return ['action' => $target->createAction] + ($target->createParameter !== null && $parent !== null ? [$target->createParameter => $parent] : []);
@@ -441,9 +507,9 @@ final class FormGateway
 	 * prázdné a klíč vyrobí až `syncOne`. Bez toho by se nedalo slíbit, pod jakým id záznam vznikne,
 	 * a náhled by tím pádem nešlo na nic navázat.
 	 */
-	private function openNew(FormTarget $target, ?string $id, ?string $parent = null): Form
+	private function openNew(FormTarget $target, ?string $id, ?string $parent = null, array $zalozka = []): Form
 	{
-		$run = $this->runner->open($target->presenter, self::createParams($target, $parent));
+		$run = $this->runner->open($target->presenter, self::createParams($target, $parent) + $zalozka);
 		$form = self::asBrowser(self::component($run->presenter, $target->form));
 
 		if ($id !== null) {
@@ -748,6 +814,33 @@ final class FormGateway
 	}
 
 	/**
+	 * Výběr polí schématu (`?fields=prices-*-price,name-cs`): jména oddělená čárkou, `*` = cokoli. Bez výběru všechna —
+	 * formulář produktu má přes tisíc polí a model potřebuje jen pár (Kolego, 31. 10. 2026).
+	 * @param list<array<string, mixed>> $pole
+	 * @return list<array<string, mixed>>
+	 */
+	private static function vyberPoli(array $pole, ?string $vzor): array
+	{
+		$vzory = \array_values(\array_filter(\array_map('trim', \explode(',', (string) $vzor)), static fn (string $v): bool => $v !== ''));
+
+		if (!$vzory) {
+			return $pole;
+		}
+
+		$re = \array_map(static fn (string $v): string => '~^' . \str_replace('\*', '.*', \preg_quote($v, '~')) . '$~', $vzory);
+
+		return \array_values(\array_filter($pole, static function (array $p) use ($re): bool {
+			foreach ($re as $r) {
+				if (\preg_match($r, (string) ($p['name'] ?? ''))) {
+					return true;
+				}
+			}
+
+			return false;
+		}));
+	}
+
+	/**
 	 * @param array<array<string, mixed>> $diff
 	 * @param list<string> $hidden
 	 * @return array<string>
@@ -760,22 +853,9 @@ final class FormGateway
 			$warnings[] = 'Nic se nemění — poslané hodnoty jsou stejné jako ty, které záznam už má.';
 		}
 
-		$readOnly = [];
-
-		foreach (FormReader::controls($form, $hidden) as $control) {
-			if (!$control->isDisabled()) {
-				continue;
-			}
-
-			$readOnly[] = FormReader::label($control);
-		}
-
-		if ($readOnly) {
-			$warnings[] = \sprintf(
-				'Pole %s jsou v tomhle formuláři jen ke čtení; pokus o jejich změnu skončí chybou 403.',
-				'„' . \implode('", „', $readOnly) . '"',
-			);
-		}
+		// Pole jen ke čtení se tu dřív vypisovala všechna (u produktu ~640 cen s DPH) — i když se zápis žádného nedotkl. Zápis,
+		// který na ně sáhne, skončí 403 dřív, než sem dojde, a schéma je má označené `readOnly`; v náhledu jsou jen šum.
+		unset($form, $hidden);
 
 		return $warnings;
 	}
