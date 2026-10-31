@@ -70,6 +70,7 @@ typu.
 | `identityResolver` | `null` | vlastní `DoryoAdmin\Gateway\IdentityResolver` projektu (přebíjí `merchantAdministrators`) |
 | `administratorService` | `null` | jméno služby `Admin\Administrator`, když jich je víc |
 | `registerEndpoint` | `true` | cesty se samy přidají do `doryoApi: endpoints:` |
+| `latte` | `true` | makra `n:kolego` a `n:kolego-pole` se přidají do Latte, viz [Značky na webu](#značky-na-webu-kolego-nad-e-shopem) |
 | `describers` | `[]` | služby `DoryoAdmin\Gateway\PageDescriber`, viz [Rozšíření](#rozšíření-z-projektu) |
 | `forms`, `actions`, `grids`, `bulk` | `[]` | whitelist — co brána umí popsat a spustit |
 
@@ -80,7 +81,7 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 
 | položka | klíče (výchozí) |
 | --- | --- |
-| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`), `createParameter` (parametr zakládací akce s nadřazeným záznamem), `item` (formulář jedné položky záznamu, viz níž) |
+| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání a značkám), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`), `znacka` (druh značky na webu), `bublina` (pole do bubliny u prvku), `createParameter` (parametr zakládací akce s nadřazeným záznamem), `item` (formulář jedné položky záznamu, viz níž) |
 | `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`), `file` (HTML jméno souboru, který signál čte z požadavku), `fileImage` (`false`), `item` (akce nad položkou záznamu) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
@@ -128,6 +129,35 @@ doryoAdmin:
             label: 'Stornovat objednávku'
             destructive: true
 ```
+
+## Značky na webu (Kolego nad e-shopem)
+
+Rozšíření Kolego v prohlížeči umí e-shop upravovat přímo na webu: co jde v administraci změnit, dostane rámeček a klik otevře
+bublinu s poli formuláře (Kolego nad e-shopem, doryo docs/156). Aby vědělo, který záznam prvek je, označí ho šablona makrem:
+
+```latte
+<article n:kolego="$product">                       {* data-kolego="produkt:<pk>" — druh podle entity *}
+<div n:kolego="'slide', $slide->getPK()">           {* data-kolego="slide:<pk>"   — druh výslovně *}
+<h3 n:kolego-pole="name">{$product->name}</h3>      {* data-kolego-pole="name"    — které pole prvek ukazuje *}
+```
+
+Druh je značka formuláře ve whitelistu a `bublina` říká, která pole rozšíření ukáže u prvku (ostatní jsou za „Celý formulář"):
+
+```neon
+doryoAdmin:
+    forms:
+        -
+            presenter: 'Eshop:Admin:Product'
+            parameter: product
+            entity: App\Eshop\DB\Product
+            znacka: produkt
+            bublina: [name, hidden, ribbons]
+```
+
+Druh smí mít jen jeden formulář (jinak start spadne). Mapa administrace (`GET /v1/admin/pages`) vrací `znacky`: druh → formulář,
+parametr a pole bubliny — jen formuláře, na které identita smí. Atribut nic neodemyká; zákazník vidí jen data atribut. Makro se do
+Latte přidá samo (`latte: true`); projekt, který chce Latte zapojit sám, nastaví `latte: false` a přidá
+`DoryoAdmin\Latte\KolegoExtension`.
 
 ## Účet a role
 

@@ -74,11 +74,39 @@ final class PageMap
 			],
 			'version' => GatewayConfig::version(),
 			'items' => $items,
+			'znacky' => $this->znacky(),
 			'note' => 'Vypisují se jen stránky, na které smí účet z „identity". Měnit jde to, co má vyplněné „forms", '
 				. '„actions" nebo „bulk", mazat, co má „delete", číst jde, co má „grids"; další klíče u stránky jsou cesty projektu. U ostatních '
 				. 'stránek brána jen ví, že existují. Formulář s „create": true umí i zakládat nový záznam — přečti si '
 				. 'u něj „createNote".',
 		];
+	}
+
+	/**
+	 * Značky na webu (Kolego nad e-shopem): druh z `data-kolego="<druh>:<id>"` → formulář, kterým se záznam mění, a pole
+	 * do bubliny u prvku. Jen formuláře, na které identita smí — ostatní prvky rozšíření nechá bez rámečku.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	private function znacky(): array
+	{
+		$out = [];
+
+		foreach ($this->config->getZnacky() as $druh => $form) {
+			if (!$this->runner->isAllowed(':' . $form->presenter . ':' . $form->action)) {
+				continue;
+			}
+
+			$out[$druh] = [
+				'label' => $form->label,
+				'form' => $form->getEndpoint(),
+				'parameter' => $form->parameter,
+				'bublina' => $form->bublina,
+				'customerEmail' => $form->customerEmail,
+			];
+		}
+
+		return $out;
 	}
 
 	/**

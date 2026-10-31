@@ -23,6 +23,9 @@ final class FormTarget
 	 *     v těle `parent`. Null = zakládací akce žádný parametr nemá
 	 * @param \DoryoAdmin\Gateway\ChildItem|null $item Formulář jedné položky záznamu stránky — jméno formuláře
 	 *     nese `{<param>}` (`detailOrderItemForm-{item}`), id položky jde v těle a brána ověří, že k záznamu patří
+	 * @param string|null $znacka Druh značky na webu (`produkt`, `slide`…): šablona e-shopu označí záznam makrem
+	 *     `n:kolego` a rozšíření Kolego podle druhu pozná, kterým formulářem se mění (Kolego nad e-shopem)
+	 * @param list<string> $bublina Pole, která rozšíření ukáže v bublině u prvku na webu; ostatní jsou za „Celý formulář"
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -39,6 +42,8 @@ final class FormTarget
 		public readonly bool $customerEmail = false,
 		public readonly ?string $createParameter = null,
 		public readonly ?ChildItem $item = null,
+		public readonly ?string $znacka = null,
+		public readonly array $bublina = [],
 	) {
 	}
 
