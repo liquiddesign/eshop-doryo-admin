@@ -19,6 +19,9 @@ final class FormTarget
 	 *     než záznam založí; vrací se ve schématu i v mapě stránek
 	 * @param list<string> $hidden Pole, která brána nevydá ani nepřijme (tajné klíče, hesla) — formulář
 	 *     je při zápisu dostane se současnou hodnotou, takže se nepřepíšou
+	 * @param string|null $znacka Druh značky na webu (`produkt`, `slide`…): šablona e-shopu označí záznam makrem
+	 *     `n:kolego` a rozšíření Kolego podle druhu pozná, kterým formulářem se mění (Kolego nad e-shopem)
+	 * @param list<string> $bublina Pole, která rozšíření ukáže v bublině u prvku na webu; ostatní jsou za „Celý formulář"
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -33,6 +36,8 @@ final class FormTarget
 		public readonly string $createNote = '',
 		public readonly array $hidden = [],
 		public readonly bool $customerEmail = false,
+		public readonly ?string $znacka = null,
+		public readonly array $bublina = [],
 	) {
 	}
 
