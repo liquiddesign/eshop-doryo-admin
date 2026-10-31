@@ -107,7 +107,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 				. 'Přes tenhle formulář jde jen editovat existující záznam.');
 		}
 
-		return new Response($this->formGateway->schema($target, $id));
+		return new Response($this->formGateway->schema($target, $id, $query->string('item'), $query->string('parent')));
 	}
 
 	/**
@@ -202,6 +202,11 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 								. 'formuláře a v "createNote" výhrada, kterou je potřeba uživateli přetlumočit.',
 							'schema' => ['type' => 'string'],
 						],
+						['name' => 'item', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
+							'description' => 'Id položky u formuláře jedné položky záznamu (v /v1/admin/pages má „items") — např. položka objednávky. '
+								. 'Bez něj se vrátí seznam položek záznamu.'],
+						['name' => 'parent', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
+							'description' => 'Id nadřazeného záznamu u zakládání pod ním (v /v1/admin/pages má „createParent") — např. akce u nového kupónu.'],
 					],
 					'responses' => ['200' => ['description' => 'OK']],
 				],
@@ -230,6 +235,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									'id' => ['type' => 'string', 'description' => 'Id upravovaného záznamu. '
 										. 'U zakládání se v náhledu vynechá (brána ho vygeneruje a vrátí) a při ostrém '
 										. 'zápisu se pošle to, které náhled vrátil.'],
+									'item' => ['type' => 'string', 'description' => 'Id položky u formuláře jedné položky záznamu; brána ověří, že k záznamu patří.'],
+									'parent' => ['type' => 'string', 'description' => 'Id nadřazeného záznamu u zakládání pod ním (kupón akce: id akce).'],
 									'create' => ['type' => 'boolean', 'description' => 'true = zakládá se nový záznam. '
 										. 'Zakládání se nepozná z toho, že id v databázi není — bez "create": true je '
 										. 'neznámé id chyba, ne pokyn k založení.'],

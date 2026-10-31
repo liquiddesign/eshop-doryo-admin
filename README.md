@@ -81,8 +81,8 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 
 | položka | klíče (výchozí) |
 | --- | --- |
-| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání a značkám), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`), `znacka` (druh značky na webu), `bublina` (pole do bubliny u prvku) |
-| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`), `file` (HTML jméno souboru, který signál čte z požadavku), `fileImage` (`false`) |
+| `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání a značkám), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`), `znacka` (druh značky na webu), `bublina` (pole do bubliny u prvku), `createParameter` (parametr zakládací akce s nadřazeným záznamem), `item` (formulář jedné položky záznamu, viz níž) |
+| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`), `file` (HTML jméno souboru, který signál čte z požadavku), `fileImage` (`false`), `item` (akce nad položkou záznamu) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
 | `delete` | `presenter`*, `entity`* (entita řádků — podle ní brána popíše a po smazání ověří, co zmizelo), `grid` (`grid`), `action` (`default`), `label`, `description` (co smazání znamená), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
@@ -222,7 +222,7 @@ v `openapi.json` (schémata těla inline, Kolego `$ref` v těle neresolvuje).
 
 | metoda a cesta | k čemu |
 | --- | --- |
-| `GET /v1/admin/pages` | mapa administrace z menu (`admin: menu:`) omezená na to, kam identita smí; u stránek formuláře, akce, gridy a hromadné úpravy z whitelistu |
+| `GET /v1/admin/pages` | mapa administrace z menu (`admin: menu:`) omezená na to, kam identita smí; u stránek formuláře, akce, gridy, hromadné úpravy a mazání z whitelistu; stránky z whitelistu, které v menu nejsou (fotky produktů), ve skupině „Mimo menu" |
 | `GET /v1/admin/forms/{presenter}/{form}?id=` | schéma polí (typ, popisek, nápověda, povinnost, číselníky, `readOnly`) a hodnoty záznamu; bez `id` schéma prázdného formuláře pro založení |
 | `POST /v1/admin/forms/{presenter}/{form}` | náhled (diff + token) nebo ostrý zápis; tělo bez `id` = náhled založení |
 | `POST /v1/admin/actions/{presenter}/{signal}` | akce (signál `handle*`); destruktivní chtějí `"confirm": true` |
@@ -270,6 +270,16 @@ POST /doryo-api/v1/admin/forms/Eshop:Admin:Customer/form
   zápis pošle to id, `"create": true` a token. Neznámé id bez `"create": true` je chyba, ne pokyn
   k založení. `createNote` z konfigurace se vrací ve schématu i náhledu a model ho má uživateli
   přetlumočit.
+- **Zakládání pod nadřazeným záznamem** (`createParameter`, kupón akce: `couponsCreate` s `discount`):
+  schéma `GET …?parent=<id>`, náhled i zápis nesou `"parent"` a token je na něj vázaný.
+- **Formulář jedné položky záznamu** (`item`): administrace některé položky edituje komponentou s id
+  položky ve jménu (`detailOrderItemForm-<id>` je `Multiplier`). Ve whitelistu je jméno se zástupkou
+  `form: 'detailOrderItemForm-{item}'` a `item: { param: item, entity: Eshop\DB\PackageItem,
+  parent: package.fk_order, label: cartItem.productName }`. Schéma s `id` záznamu bez `item` vrátí
+  seznam položek, s `item` jejich formulář; zápis nese `id` i `item`. Brána ověří, že položka k záznamu
+  patří (`parent` = sloupec s id záznamu, i přes vztah) — komponenta ani signál to samy nehlídají.
+- **Select bez prázdné volby** a bez hodnoty dostane první možnost, jak by ji odeslal prohlížeč
+  (jinak „Vyberte prosím platnou možnost" u podmínek kupónu).
 
 ### Akce
 
@@ -277,6 +287,10 @@ POST /doryo-api/v1/admin/forms/Eshop:Admin:Customer/form
 POST /doryo-api/v1/admin/actions/Eshop:Admin:Order/cancelOrder
 {"params": {"orderId": "…"}, "dryRun": true}
 ```
+
+Akce nad položkou záznamu (`item` jako u formulářů, `param` = parametr signálu s id položky — odebrání
+položky objednávky `toggleDeleteOrderItem` s `itemId`) ověří, že položka patří k záznamu z `idParam`;
+náhled i výsledek ji vrátí v `item`.
 
 Náhled vrátí `record` (id, kód, stav), `requiresConfirm` a token. Ostrý běh: totéž s
 `"dryRun": false`, tokenem a u destruktivní akce `"confirm": true`; odpověď nese `before`, `after`

@@ -131,7 +131,7 @@ final class GridTargets
 		foreach ($repository->many()->where('this.' . $pk, \array_slice($ids, 0, self::SAMPLE))->toArray() as $id => $record) {
 			$row = ['id' => (string) $id];
 
-			foreach (['code', 'company', 'name', 'fullname'] as $property) {
+			foreach (['code', 'company', 'name', 'fullname', 'fileName'] as $property) {
 				$value = self::property($record, $property);
 
 				if ($value === null || $value === '') {

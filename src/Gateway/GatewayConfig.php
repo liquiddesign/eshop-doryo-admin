@@ -20,7 +20,7 @@ final class GatewayConfig
 	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
 	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
 	 */
-	public const VERSION = '0.4.0';
+	public const VERSION = '0.5.0';
 
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];
@@ -75,6 +75,8 @@ final class GatewayConfig
 				createNote: (string) ($form['createNote'] ?? ''),
 				hidden: \array_values(\array_map('\strval', (array) ($form['hidden'] ?? []))),
 				customerEmail: (bool) ($form['customerEmail'] ?? false),
+				createParameter: isset($form['createParameter']) ? (string) $form['createParameter'] : null,
+				item: ChildItem::fromConfig($form['item'] ?? null),
 				znacka: isset($form['znacka']) ? (string) $form['znacka'] : null,
 				bublina: \array_values(\array_map('\strval', (array) ($form['bublina'] ?? []))),
 			);
@@ -95,6 +97,7 @@ final class GatewayConfig
 				customerEmail: (bool) ($action['customerEmail'] ?? false),
 				file: isset($action['file']) ? (string) $action['file'] : null,
 				fileImage: (bool) ($action['fileImage'] ?? false),
+				item: ChildItem::fromConfig($action['item'] ?? null),
 			);
 
 			$this->actions[self::key($target->presenter, $target->signal)] = $target;
@@ -248,6 +251,21 @@ final class GatewayConfig
 			$presenter,
 			$grid,
 		));
+	}
+
+	/**
+	 * Presentery, pro které whitelist něco má, s akcí, podle které se ptát na přístup — kvůli stránkám mimo menu.
+	 * @return array<string, array{label: string, action: string}>
+	 */
+	public function getPresenters(): array
+	{
+		$presenters = [];
+
+		foreach ([...$this->grids, ...$this->deletes, ...$this->forms, ...$this->actions, ...$this->bulks] as $target) {
+			$presenters[$target->presenter] ??= ['label' => $target->label, 'action' => $target->action];
+		}
+
+		return $presenters;
 	}
 
 	/**

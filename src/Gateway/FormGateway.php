@@ -13,6 +13,7 @@ use Nette\Forms\Controls\Checkbox;
 use Nette\Forms\Controls\ChoiceControl;
 use Nette\Forms\Controls\HiddenField;
 use Nette\Forms\Controls\MultiChoiceControl;
+use Nette\Forms\Controls\SelectBox;
 use Nette\Forms\Controls\SubmitButton;
 use Nette\Forms\Controls\UploadControl;
 use Nette\Forms\Form;
@@ -45,14 +46,20 @@ final class FormGateway
 	 * pro založení nového záznamu — to umí jen formulář, který to má v konfiguraci povolené.
 	 * @return array<string, mixed>
 	 */
-	public function schema(FormTarget $target, ?string $id): array
+	public function schema(FormTarget $target, ?string $id, ?string $item = null, ?string $parent = null): array
 	{
 		if ($id === null) {
 			self::assertCreatable($target);
+			self::assertParent($target, $parent);
 		}
 
-		return $this->runner->withAdministrator(function () use ($target, $id): array {
-			$form = $id === null ? $this->openNew($target, null) : $this->open($target, $id);
+		return $this->runner->withAdministrator(function () use ($target, $id, $item, $parent): array {
+			if ($id !== null && $target->item !== null && $item === null) {
+				return $this->itemList($target, $id);
+			}
+
+			$itemRecord = $id !== null && $target->item !== null ? $target->item->assertBelongs($this->connection, (string) $item, $id) : null;
+			$form = $id === null ? $this->openNew($target, null, $parent) : $this->open($target, $id, $item);
 			$described = FormReader::describe($form, $target->hidden);
 			$described['fields'] = $this->uploadFields($form, $described['fields'], $target->hidden);
 
@@ -92,6 +99,16 @@ final class FormGateway
 				$schema['createNote'] = $target->createNote;
 			}
 
+			if ($itemRecord !== null) {
+				$schema['item'] = $itemRecord;
+				$schema['write']['body'] = ['id' => $id, 'item' => $itemRecord['id']] + $schema['write']['body'];
+			}
+
+			if ($id === null && $target->createParameter !== null) {
+				$schema['parent'] = $parent;
+				$schema['write']['body'] = ['parent' => $parent] + $schema['write']['body'];
+			}
+
 			return $schema;
 		});
 	}
@@ -110,8 +127,12 @@ final class FormGateway
 		// (tělo bez id) se tedy ptá na založení sám, ostrý zápis to musí zopakovat `"create": true`.
 		$create = ($body['create'] ?? null) === true || !isset($body['id']);
 
+		$parent = $create ? self::optionalString($body, 'parent') : null;
+		$item = !$create && $target->item !== null ? self::requireString($body, 'item') : null;
+
 		if ($create) {
 			self::assertCreatable($target);
+			self::assertParent($target, $parent);
 		}
 
 		if ($create && !isset($body['id'])) {
@@ -141,8 +162,9 @@ final class FormGateway
 				. 'Schéma polí vrátí GET ' . $target->getEndpoint() . ($create ? '' : '?id=' . $id));
 		}
 
-		return $this->runner->withAdministrator(function () use ($target, $id, $values, $files, $dryRun, $create, $body): array {
-			$form = $create ? $this->openNew($target, $id) : $this->open($target, $id);
+		return $this->runner->withAdministrator(function () use ($target, $id, $values, $files, $dryRun, $create, $body, $parent, $item): array {
+			$itemRecord = $item !== null && $target->item !== null ? $target->item->assertBelongs($this->connection, $item, $id) : null;
+			$form = $create ? $this->openNew($target, $id, $parent) : $this->open($target, $id, $item);
 			$before = FormReader::values($form);
 
 			self::apply($form, $values, $target->hidden);
@@ -150,7 +172,8 @@ final class FormGateway
 
 			$after = FormReader::values($form);
 			$diff = \array_merge(self::diff($form, $before, $after), self::fileDiff($uploads));
-			$changes = self::changes($diff);
+			// token se váže i na nadřazený záznam a položku: s jiným „parent" nebo „item" je ostrý zápis 409
+			$changes = self::changes($diff) + \array_filter(['_parent' => $parent, '_item' => $item], static fn (?string $v): bool => $v !== null);
 			$scope = ($create ? 'create:' : 'form:') . $target->presenter . '/' . $target->form;
 
 			if ($dryRun) {
@@ -171,6 +194,10 @@ final class FormGateway
 					'customerEmail' => $target->customerEmail,
 				];
 
+				if ($itemRecord !== null) {
+					$response['item'] = $itemRecord;
+				}
+
 				if ($create) {
 					$response['note'] = 'Ostrý zápis pošli s "id" a "create": true z téhle odpovědi a s previewTokenem.';
 
@@ -190,7 +217,9 @@ final class FormGateway
 				$before,
 			);
 
-			return $this->write($target, $id, $form, $uploads, $diff, $create, PresenterRunner::actor($body));
+			$result = $this->write($target, $id, $form, $uploads, $diff, $create, PresenterRunner::actor($body), $parent, $item);
+
+			return $itemRecord !== null ? $result + ['item' => $itemRecord] : $result;
 		});
 	}
 
@@ -202,7 +231,7 @@ final class FormGateway
 	 * @param array<array<string, mixed>> $diff
 	 * @return array<string, mixed>
 	 */
-	private function write(FormTarget $target, string $id, Form $prepared, array $uploads, array $diff, bool $create, ?string $actor): array
+	private function write(FormTarget $target, string $id, Form $prepared, array $uploads, array $diff, bool $create, ?string $actor, ?string $parent = null, ?string $item = null): array
 	{
 		$post = self::buildPost($prepared, \array_keys($uploads));
 		$filesPost = [];
@@ -212,16 +241,17 @@ final class FormGateway
 		}
 
 		$action = $create ? $target->createAction : $target->action;
-		$params = $create ? ['action' => $action] : ['action' => $action, $target->parameter => $id];
+		$params = $create ? self::createParams($target, $parent) : ['action' => $action, $target->parameter => $id];
+		$component = self::componentName($target, $item);
 
 		$run = $this->runner->run(
 			$target->presenter,
-			$params + ['do' => $target->form . '-submit'],
+			$params + ['do' => $component . '-submit'],
 			$post,
 			$filesPost,
 		);
 
-		$form = self::component($run->presenter, $target->form);
+		$form = self::component($run->presenter, $component);
 
 		if (!$form->isSubmitted()) {
 			throw new ApiException(500, 'Zápis se nepovedl', 'Formulář nepřijal odeslaná data. '
@@ -316,11 +346,89 @@ final class FormGateway
 	/**
 	 * Načte formulář tak, jak ho vidí administrace: s oprávněními role a s hodnotami záznamu.
 	 */
-	private function open(FormTarget $target, string $id): Form
+	private function open(FormTarget $target, string $id, ?string $item = null): Form
 	{
 		$run = $this->runner->open($target->presenter, ['action' => $target->action, $target->parameter => $id]);
 
-		return self::component($run->presenter, $target->form);
+		return self::asBrowser(self::component($run->presenter, self::componentName($target, $item)));
+	}
+
+	/**
+	 * Select bez prázdné volby a bez hodnoty má v prohlížeči vybranou první možnost a ta se odešle.
+	 * Brána musí udělat totéž, jinak formulář spadne na „Vyberte prosím platnou možnost" (podmínky kupónu
+	 * akce) — a v náhledu i v rozdílu je pak vidět hodnota, kterou administrace opravdu dostane.
+	 */
+	private static function asBrowser(Form $form): Form
+	{
+		foreach ($form->getControls() as $control) {
+			if (!$control instanceof SelectBox || $control->isDisabled() || $control->getPrompt() !== false || $control->getValue() !== null) {
+				continue;
+			}
+
+			$first = \array_key_first($control->getItems());
+
+			if ($first !== null) {
+				$control->setValue($first);
+			}
+		}
+
+		return $form;
+	}
+
+	/**
+	 * Formulář položky bez id položky: místo schématu seznam položek záznamu, ať model ví, co poslat.
+	 * @return array<string, mixed>
+	 */
+	private function itemList(FormTarget $target, string $id): array
+	{
+		// stránka záznamu se otevře kvůli oprávněním i kvůli tomu, že záznam identita vidí
+		$this->runner->open($target->presenter, ['action' => $target->action, $target->parameter => $id]);
+		\assert($target->item !== null);
+
+		return [
+			'presenter' => $target->presenter,
+			'form' => $target->form,
+			'id' => $id,
+			'label' => $target->label,
+			'items' => $target->item->list($this->connection, $id),
+			'note' => 'Formulář patří jedné položce záznamu. Schéma a hodnoty vrátí GET ' . $target->getEndpoint()
+				. '?id=' . $id . '&item=<id položky ze seznamu>; zápis nese v těle "id" záznamu i "item".',
+		];
+	}
+
+	/**
+	 * Jméno komponenty formuláře: u formuláře položky s dosazeným id položky.
+	 */
+	private static function componentName(FormTarget $target, ?string $item): string
+	{
+		return $target->item !== null && $item !== null ? $target->item->component($target->form, $item) : $target->form;
+	}
+
+	/**
+	 * Parametry zakládací akce: bez parametru, nebo s nadřazeným záznamem (`discount` u kupónu akce).
+	 * @return array<string, string>
+	 */
+	private static function createParams(FormTarget $target, ?string $parent): array
+	{
+		return ['action' => $target->createAction] + ($target->createParameter !== null && $parent !== null ? [$target->createParameter => $parent] : []);
+	}
+
+	/**
+	 * Zakládání pod nadřazeným záznamem chce „parent", jinde ho nebere.
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	private static function assertParent(FormTarget $target, ?string $parent): void
+	{
+		if ($target->createParameter !== null && $parent === null) {
+			throw ApiException::badRequest(\sprintf(
+				'„%s" se zakládá pod nadřazeným záznamem — v těle (u schématu v adrese) chybí „parent" s jeho id.',
+				$target->label,
+			));
+		}
+
+		if ($target->createParameter === null && $parent !== null) {
+			throw ApiException::badRequest(\sprintf('„%s" se zakládá samo, „parent" nebere.', $target->label));
+		}
 	}
 
 	/**
@@ -333,10 +441,10 @@ final class FormGateway
 	 * prázdné a klíč vyrobí až `syncOne`. Bez toho by se nedalo slíbit, pod jakým id záznam vznikne,
 	 * a náhled by tím pádem nešlo na nic navázat.
 	 */
-	private function openNew(FormTarget $target, ?string $id): Form
+	private function openNew(FormTarget $target, ?string $id, ?string $parent = null): Form
 	{
-		$run = $this->runner->open($target->presenter, ['action' => $target->createAction]);
-		$form = self::component($run->presenter, $target->form);
+		$run = $this->runner->open($target->presenter, self::createParams($target, $parent));
+		$form = self::asBrowser(self::component($run->presenter, $target->form));
 
 		if ($id !== null) {
 			$uuid = $form->getComponent('uuid', false);
@@ -833,6 +941,16 @@ final class FormGateway
 		}
 
 		$target = $value;
+	}
+
+	/**
+	 * @param array<mixed> $body
+	 */
+	private static function optionalString(array $body, string $key): ?string
+	{
+		$value = $body[$key] ?? null;
+
+		return \is_scalar($value) && (string) $value !== '' ? (string) $value : null;
 	}
 
 	/**

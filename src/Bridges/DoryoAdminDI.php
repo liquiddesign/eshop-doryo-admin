@@ -90,6 +90,10 @@ final class DoryoAdminDI extends CompilerExtension
 				'hidden' => Expect::listOf('string'),
 				// uložení formuláře pošle e-mail zákazníkovi (Kolego to řekne na kartě)
 				'customerEmail' => Expect::bool(false),
+				// parametr zakládací akce s nadřazeným záznamem (kupón akce: discount); v těle `parent`
+				'createParameter' => Expect::string()->nullable(),
+				// formulář jedné položky záznamu (`detailOrderItemForm-{item}`): entita položky, sloupec s id záznamu, popisek
+				'item' => Expect::arrayOf('string', 'string'),
 				// druh značky na webu (n:kolego v šabloně) — rozšíření Kolego podle ní pozná, čím se prvek mění
 				'znacka' => Expect::string()->pattern('[a-z][a-z0-9-]{0,30}')->nullable(),
 				// pole, která rozšíření ukáže v bublině u prvku na webu
@@ -110,6 +114,8 @@ final class DoryoAdminDI extends CompilerExtension
 				// HTML jméno souboru, který signál čte z požadavku (dropzone: `file`); jen s maxUploadBytes > 0
 				'file' => Expect::string()->nullable(),
 				'fileImage' => Expect::bool(false),
+				// akce nad položkou záznamu: parametr s id položky, entita, sloupec s id záznamu (`idParam`), popisek
+				'item' => Expect::arrayOf('string', 'string'),
 			])->castTo('array')),
 			// seznamy (gridy), které smí agent číst; popis je pro model, grid sám zná jen hlavičky
 			'grids' => Expect::listOf(Expect::structure([
