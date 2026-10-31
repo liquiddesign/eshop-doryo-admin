@@ -19,6 +19,10 @@ final class FormTarget
 	 *     než záznam založí; vrací se ve schématu i v mapě stránek
 	 * @param list<string> $hidden Pole, která brána nevydá ani nepřijme (tajné klíče, hesla) — formulář
 	 *     je při zápisu dostane se současnou hodnotou, takže se nepřepíšou
+	 * @param string|null $createParameter Parametr zakládací akce s nadřazeným záznamem (`discount` u kupónu akce);
+	 *     v těle `parent`. Null = zakládací akce žádný parametr nemá
+	 * @param \DoryoAdmin\Gateway\ChildItem|null $item Formulář jedné položky záznamu stránky — jméno formuláře
+	 *     nese `{<param>}` (`detailOrderItemForm-{item}`), id položky jde v těle a brána ověří, že k záznamu patří
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -33,6 +37,8 @@ final class FormTarget
 		public readonly string $createNote = '',
 		public readonly array $hidden = [],
 		public readonly bool $customerEmail = false,
+		public readonly ?string $createParameter = null,
+		public readonly ?ChildItem $item = null,
 	) {
 	}
 

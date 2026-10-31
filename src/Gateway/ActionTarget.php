@@ -19,6 +19,8 @@ final class ActionTarget
 	 * @param string|null $file HTML jméno souboru, který signál čte z požadavku (`getFile('file')` u nahrávání
 	 *     fotek přes dropzone); null = signál soubor nebere
 	 * @param bool $fileImage Soubor musí být obrázek
+	 * @param \DoryoAdmin\Gateway\ChildItem|null $item Akce nad položkou záznamu (odebrat položku objednávky): parametr
+	 *     `item->param` nese id položky a brána ověří, že patří k záznamu z `idParam`
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -32,6 +34,7 @@ final class ActionTarget
 		public readonly bool $customerEmail = false,
 		public readonly ?string $file = null,
 		public readonly bool $fileImage = false,
+		public readonly ?ChildItem $item = null,
 	) {
 	}
 

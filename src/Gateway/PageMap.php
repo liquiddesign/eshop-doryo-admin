@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace DoryoAdmin\Gateway;
 
 use Admin\Controls\IMenuFactory;
-use Admin\Controls\MenuItem;
 
 /**
  * Mapa administrace: co v ní vůbec je a co z toho smí identita požadavku (servisní účet agenta,
@@ -34,15 +33,35 @@ final class PageMap
 	public function build(): array
 	{
 		$items = [];
+		$listed = [];
 
 		foreach ($this->menuFactory->create()->getItems() as $group) {
 			foreach ($group->items ?: [$group] as $item) {
-				$page = $this->describe($group, $item);
+				if ($item->link === null) {
+					continue;
+				}
+
+				$page = $this->describe($group === $item ? null : $group->label, $item->label, self::presenterName($item->link), $item->link);
 
 				if ($page === null) {
 					continue;
 				}
 
+				$items[] = $page;
+				$listed[$page['presenter']] = true;
+			}
+		}
+
+		// Stránky z whitelistu, které v menu nejsou (fotky produktů jsou v administraci jen jako odkaz z produktu):
+		// jinak by je model neměl jak najít, i když na ně identita smí.
+		foreach ($this->config->getPresenters() as $presenter => $first) {
+			if (isset($listed[$presenter])) {
+				continue;
+			}
+
+			$page = $this->describe('Mimo menu', $first['label'], $presenter, ':' . $presenter . ':' . $first['action']);
+
+			if ($page !== null) {
 				$items[] = $page;
 			}
 		}
@@ -65,21 +84,20 @@ final class PageMap
 	/**
 	 * @return array<string, mixed>|null
 	 */
-	private function describe(MenuItem $group, MenuItem $item): ?array
+	private function describe(?string $group, string $label, string $presenter, string $link): ?array
 	{
-		if ($item->link === null || !$this->runner->isAllowed($item->link)) {
+		if (!$this->runner->isAllowed($link)) {
 			return null;
 		}
 
-		$presenter = self::presenterName($item->link);
 		$page = $this->config->getPage($presenter);
 
 		$row = [
-			'group' => $group === $item ? null : $group->label,
-			'label' => $item->label,
+			'group' => $group,
+			'label' => $label,
 			'presenter' => $presenter,
-			'link' => $item->link,
-			'access' => $this->runner->isAllowed($item->link, '777') ? 'write' : 'read',
+			'link' => $link,
+			'access' => $this->runner->isAllowed($link, '777') ? 'write' : 'read',
 		];
 
 		foreach ($page['forms'] as $form) {
@@ -96,8 +114,18 @@ final class PageMap
 				$described['customerEmail'] = true;
 			}
 
+			if ($form->item !== null) {
+				// formulář jedné položky záznamu: seznam položek vrátí schéma bez item
+				$described['schema'] = 'GET ' . $form->getEndpoint() . '?id=<id záznamu>&item=<id položky>';
+				$described['items'] = 'GET ' . $form->getEndpoint() . '?id=<id záznamu>';
+			}
+
+			if ($form->createParameter !== null) {
+				$described['createParent'] = $form->createParameter;
+			}
+
 			if ($form->create) {
-				$described['createSchema'] = 'GET ' . $form->getEndpoint();
+				$described['createSchema'] = 'GET ' . $form->getEndpoint() . ($form->createParameter !== null ? '?parent=<id nadřazeného záznamu>' : '');
 
 				if ($form->createNote !== '') {
 					$described['createNote'] = $form->createNote;

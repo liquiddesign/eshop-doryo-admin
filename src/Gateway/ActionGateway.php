@@ -55,6 +55,9 @@ final class ActionGateway
 		return $this->runner->withAdministrator(function () use ($target, $body, $params, $signed, $upload, $dryRun, $id, $resource): array {
 			$this->runner->assertManager($resource, $target->label);
 
+			// akce nad položkou záznamu (odebrat položku objednávky): signál si příslušnost nekontroluje
+			$item = $target->item !== null ? $target->item->assertBelongs($this->connection, $params[$target->item->param] ?? '', $id) : null;
+
 			if ($dryRun) {
 				// Náhled otevře stránku akce s jejími parametry, jen bez signálu: administrace tím
 				// sama řekne, jestli identita na záznam smí — For Baby `OrderPresenter::startup()`
@@ -69,7 +72,7 @@ final class ActionGateway
 			if ($dryRun) {
 				$preview = $this->previewToken->issue($scope, $id, $signed, $before);
 
-				return ($upload !== null ? ['file' => $upload['file']] : []) + [
+				return ($upload !== null ? ['file' => $upload['file']] : []) + ($item !== null ? ['item' => $item] : []) + [
 					'dryRun' => true,
 					'action' => $target->signal,
 					'label' => $target->label,
@@ -140,6 +143,10 @@ final class ActionGateway
 
 			if ($upload !== null) {
 				$result['file'] = $upload['file'];
+			}
+
+			if ($item !== null) {
+				$result['item'] = $item;
 			}
 
 			// signály dropzone odpovídají JSONem (název uloženého souboru, náhled) — model ho potřebuje třeba
