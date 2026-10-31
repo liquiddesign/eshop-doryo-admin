@@ -107,7 +107,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 				. 'Přes tenhle formulář jde jen editovat existující záznam.');
 		}
 
-		return new Response($this->formGateway->schema($target, $id, $query->string('item'), $query->string('parent'), $query->string('fields')));
+		return new Response($this->formGateway->schema($target, $id, $query->string('item'), $query->string('parent'), $query->string('fields'), $query->string('tab')));
 	}
 
 	/**
@@ -207,6 +207,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 								. 'Bez něj se vrátí seznam položek záznamu.'],
 						['name' => 'parent', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
 							'description' => 'Id nadřazeného záznamu u zakládání pod ním (v /v1/admin/pages má „createParent") — např. akce u nového kupónu.'],
+						['name' => 'tab', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
+							'description' => 'Záložka formuláře, který ji má (kategorie: id typu stromu z categoryTypeGrid) — jen u schématu nového záznamu; u úpravy ji brána vezme ze záznamu.'],
 						['name' => 'fields', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
 							'description' => 'Jen vybraná pole: jména oddělená čárkou, * = cokoli (fields=prices-*-price,name-cs). Formulář produktu má přes '
 								. 'tisíc polí — čti jen ta, která potřebuješ; odpověď řekne ve "fieldsFilter", kolik vybralo z kolika.'],
@@ -240,6 +242,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 										. 'zápisu se pošle to, které náhled vrátil.'],
 									'item' => ['type' => 'string', 'description' => 'Id položky u formuláře jedné položky záznamu; brána ověří, že k záznamu patří.'],
 									'parent' => ['type' => 'string', 'description' => 'Id nadřazeného záznamu u zakládání pod ním (kupón akce: id akce).'],
+									'tab' => ['type' => 'string', 'description' => 'Záložka nového záznamu u formuláře, který ji má (kategorie: id typu stromu). U úpravy ji brána vezme ze záznamu, u založení i z nadřazeného (ancestor).'],
 									'create' => ['type' => 'boolean', 'description' => 'true = zakládá se nový záznam. '
 										. 'Zakládání se nepozná z toho, že id v databázi není — bez "create": true je '
 										. 'neznámé id chyba, ne pokyn k založení.'],

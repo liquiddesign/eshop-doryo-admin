@@ -291,6 +291,18 @@ POST /doryo-api/v1/admin/forms/Eshop:Admin:Customer/form
       'prices-{id}-price': ['Cena bez DPH', Eshop\DB\Pricelist]          # „Cena bez DPH · KZ – Denbraven"
       'visibility-list_{id}-recommended': ['Doporučený', Eshop\DB\VisibilityList]
   ```
+- **Záložka presenteru** (0.6, `tabParameter`, `tabColumn`, `tabFromField`): některé presentery berou při uložení údaj
+  z persistentního parametru v adrese — kategorie strom z `tab` (`$values['type'] = $presenter->tab`). Bez něj ostrý zápis
+  spadl, nebo by záznam přestěhoval do jiného stromu, a náhled to nepoznal (obsluhu uložení nespouští). Brána záložku pošle
+  jako prohlížeč: u úpravy ze sloupce záznamu, u založení z `tab` v těle (schéma `?tab=`), jinak z nadřazeného záznamu.
+
+  ```neon
+  tabParameter: tab        # persistentní parametr presenteru
+  tabColumn: type          # sloupec záznamu s hodnotou záložky
+  tabFromField: ancestor   # u založení: záložka nadřazeného záznamu z tohoto pole
+  ```
+- **Spadlé uložení** (0.6): výjimka z obsluhy formuláře jde do logu (Tracy, `doryo-admin`) a volající dostane 500 s tím, co
+  spadlo („Uložení formuláře „Kategorie" v administraci spadlo (DriverException): …"), ne jen „Požadavek se nepodařilo zpracovat".
 - **Varování** náhledu už nevypisují všechna pole jen ke čtení (0.6): zápis, který na ně sáhne, skončí 403 dřív
   a schéma je má označená `readOnly` — v náhledu byla jen šum (u produktu ~640 cen s DPH).
 

@@ -80,6 +80,9 @@ final class GatewayConfig
 				znacka: isset($form['znacka']) ? (string) $form['znacka'] : null,
 				bublina: \array_values(\array_map('\strval', (array) ($form['bublina'] ?? []))),
 				popisky: \array_map(static fn ($p): array => \array_values(\array_map('\strval', (array) $p)), (array) ($form['popisky'] ?? [])),
+				tabParameter: isset($form['tabParameter']) ? (string) $form['tabParameter'] : null,
+				tabColumn: isset($form['tabColumn']) ? (string) $form['tabColumn'] : null,
+				tabFromField: isset($form['tabFromField']) ? (string) $form['tabFromField'] : null,
 			);
 
 			$this->forms[self::key($target->presenter, $target->form)] = $target;

@@ -28,6 +28,10 @@ final class FormTarget
 	 * @param list<string> $bublina Pole, která rozšíření ukáže v bublině u prvku na webu; ostatní jsou za „Celý formulář"
 	 * @param array<string, list<string>> $popisky Popisky polí bez vlastního popisku: vzor jména s `{id}` → [předpona, entita]
 	 *     (`'prices-{id}-price' => ['Cena bez DPH', Pricelist::class]` → „Cena bez DPH · KZ – Denbraven"), viz {@see Popisky}
+	 * @param string|null $tabParameter Persistentní parametr presenteru se záložkou (`tab` — u kategorií typ stromu); administrace
+	 *     z něj při uložení bere, kam záznam patří, takže ho brána musí poslat jako prohlížeč
+	 * @param string|null $tabColumn Sloupec záznamu (`entity`) s hodnotou záložky — u úpravy se vezme odtud (`type`)
+	 * @param string|null $tabFromField Pole formuláře s nadřazeným záznamem, z jehož `tabColumn` se vezme záložka u založení (`ancestor`)
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -47,6 +51,9 @@ final class FormTarget
 		public readonly ?string $znacka = null,
 		public readonly array $bublina = [],
 		public readonly array $popisky = [],
+		public readonly ?string $tabParameter = null,
+		public readonly ?string $tabColumn = null,
+		public readonly ?string $tabFromField = null,
 	) {
 	}
 
