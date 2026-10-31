@@ -11,6 +11,7 @@ use DoryoAdmin\Gateway\BulkGateway;
 use DoryoAdmin\Gateway\DeleteGateway;
 use DoryoAdmin\Gateway\EmailAdministratorResolver;
 use DoryoAdmin\Gateway\FormGateway;
+use DoryoAdmin\Gateway\Popisky;
 use DoryoAdmin\Gateway\GatewayConfig;
 use DoryoAdmin\Gateway\GridGateway;
 use DoryoAdmin\Gateway\MerchantAdministratorResolver;
@@ -98,6 +99,8 @@ final class DoryoAdminDI extends CompilerExtension
 				'znacka' => Expect::string()->pattern('[a-z][a-z0-9-]{0,30}')->nullable(),
 				// pole, která rozšíření ukáže v bublině u prvku na webu
 				'bublina' => Expect::listOf('string'),
+				// popisky polí bez vlastního popisku: 'prices-{id}-price' => [Cena bez DPH, Eshop\DB\Pricelist] (Popisky)
+				'popisky' => Expect::arrayOf(Expect::listOf('string'), 'string'),
 			])->castTo('array')),
 			// whitelist signálů (handle*): popis parametrů a význam z kódu vyčíst nejde, proto ručně
 			'actions' => Expect::listOf(Expect::structure([
@@ -214,6 +217,7 @@ final class DoryoAdminDI extends CompilerExtension
 		$builder->addDefinition($this->prefix('pageMap'))->setFactory(PageMap::class, [
 			'describers' => \array_map(self::serviceArgument(...), $config->describers),
 		]);
+		$builder->addDefinition($this->prefix('popisky'))->setFactory(Popisky::class);
 		$builder->addDefinition($this->prefix('formGateway'))->setFactory(FormGateway::class);
 		$builder->addDefinition($this->prefix('actionGateway'))->setFactory(ActionGateway::class);
 		$builder->addDefinition($this->prefix('bulkGateway'))->setFactory(BulkGateway::class);

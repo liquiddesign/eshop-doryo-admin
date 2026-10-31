@@ -20,7 +20,7 @@ final class GatewayConfig
 	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
 	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
 	 */
-	public const VERSION = '0.5.0';
+	public const VERSION = '0.6.0';
 
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];
@@ -79,6 +79,7 @@ final class GatewayConfig
 				item: ChildItem::fromConfig($form['item'] ?? null),
 				znacka: isset($form['znacka']) ? (string) $form['znacka'] : null,
 				bublina: \array_values(\array_map('\strval', (array) ($form['bublina'] ?? []))),
+				popisky: \array_map(static fn ($p): array => \array_values(\array_map('\strval', (array) $p)), (array) ($form['popisky'] ?? [])),
 			);
 
 			$this->forms[self::key($target->presenter, $target->form)] = $target;

@@ -26,6 +26,8 @@ final class FormTarget
 	 * @param string|null $znacka Druh značky na webu (`produkt`, `slide`…): šablona e-shopu označí záznam makrem
 	 *     `n:kolego` a rozšíření Kolego podle druhu pozná, kterým formulářem se mění (Kolego nad e-shopem)
 	 * @param list<string> $bublina Pole, která rozšíření ukáže v bublině u prvku na webu; ostatní jsou za „Celý formulář"
+	 * @param array<string, list<string>> $popisky Popisky polí bez vlastního popisku: vzor jména s `{id}` → [předpona, entita]
+	 *     (`'prices-{id}-price' => ['Cena bez DPH', Pricelist::class]` → „Cena bez DPH · KZ – Denbraven"), viz {@see Popisky}
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -44,6 +46,7 @@ final class FormTarget
 		public readonly ?ChildItem $item = null,
 		public readonly ?string $znacka = null,
 		public readonly array $bublina = [],
+		public readonly array $popisky = [],
 	) {
 	}
 

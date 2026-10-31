@@ -38,6 +38,7 @@ final class FormGateway
 		private ChangelogRepository $changelogRepository,
 		private DIConnection $connection,
 		private Uploads $uploads,
+		private Popisky $popisky,
 	) {
 	}
 
@@ -46,14 +47,14 @@ final class FormGateway
 	 * pro založení nového záznamu — to umí jen formulář, který to má v konfiguraci povolené.
 	 * @return array<string, mixed>
 	 */
-	public function schema(FormTarget $target, ?string $id, ?string $item = null, ?string $parent = null): array
+	public function schema(FormTarget $target, ?string $id, ?string $item = null, ?string $parent = null, ?string $fields = null): array
 	{
 		if ($id === null) {
 			self::assertCreatable($target);
 			self::assertParent($target, $parent);
 		}
 
-		return $this->runner->withAdministrator(function () use ($target, $id, $item, $parent): array {
+		return $this->runner->withAdministrator(function () use ($target, $id, $item, $parent, $fields): array {
 			if ($id !== null && $target->item !== null && $item === null) {
 				return $this->itemList($target, $id);
 			}
@@ -61,7 +62,9 @@ final class FormGateway
 			$itemRecord = $id !== null && $target->item !== null ? $target->item->assertBelongs($this->connection, (string) $item, $id) : null;
 			$form = $id === null ? $this->openNew($target, null, $parent) : $this->open($target, $id, $item);
 			$described = FormReader::describe($form, $target->hidden);
-			$described['fields'] = $this->uploadFields($form, $described['fields'], $target->hidden);
+			$described['fields'] = $this->popisky->pole($target, $this->uploadFields($form, $described['fields'], $target->hidden));
+			$celkem = \count($described['fields']);
+			$described['fields'] = self::vyberPoli($described['fields'], $fields);
 
 			$schema = [
 				'presenter' => $target->presenter,
@@ -72,6 +75,7 @@ final class FormGateway
 				'description' => $target->description,
 				'groups' => $described['groups'],
 				'fields' => $described['fields'],
+				...($fields !== null && $fields !== '' ? ['fieldsFilter' => ['vzor' => $fields, 'vybrano' => \count($described['fields']), 'celkem' => $celkem]] : []),
 				'write' => [
 					'endpoint' => 'POST ' . $target->getEndpoint(),
 					'note' => $id === null
@@ -174,6 +178,7 @@ final class FormGateway
 			$diff = \array_merge(self::diff($form, $before, $after), self::fileDiff($uploads));
 			// token se váže i na nadřazený záznam a položku: s jiným „parent" nebo „item" je ostrý zápis 409
 			$changes = self::changes($diff) + \array_filter(['_parent' => $parent, '_item' => $item], static fn (?string $v): bool => $v !== null);
+			$diff = $this->popisky->pole($target, $diff);   // popisky až po otisku změn — token se váže na hodnoty, ne na jména
 			$scope = ($create ? 'create:' : 'form:') . $target->presenter . '/' . $target->form;
 
 			if ($dryRun) {
@@ -748,6 +753,33 @@ final class FormGateway
 	}
 
 	/**
+	 * Výběr polí schématu (`?fields=prices-*-price,name-cs`): jména oddělená čárkou, `*` = cokoli. Bez výběru všechna —
+	 * formulář produktu má přes tisíc polí a model potřebuje jen pár (Kolego, 31. 10. 2026).
+	 * @param list<array<string, mixed>> $pole
+	 * @return list<array<string, mixed>>
+	 */
+	private static function vyberPoli(array $pole, ?string $vzor): array
+	{
+		$vzory = \array_values(\array_filter(\array_map('trim', \explode(',', (string) $vzor)), static fn (string $v): bool => $v !== ''));
+
+		if (!$vzory) {
+			return $pole;
+		}
+
+		$re = \array_map(static fn (string $v): string => '~^' . \str_replace('\*', '.*', \preg_quote($v, '~')) . '$~', $vzory);
+
+		return \array_values(\array_filter($pole, static function (array $p) use ($re): bool {
+			foreach ($re as $r) {
+				if (\preg_match($r, (string) ($p['name'] ?? ''))) {
+					return true;
+				}
+			}
+
+			return false;
+		}));
+	}
+
+	/**
 	 * @param array<array<string, mixed>> $diff
 	 * @param list<string> $hidden
 	 * @return array<string>
@@ -760,22 +792,9 @@ final class FormGateway
 			$warnings[] = 'Nic se nemění — poslané hodnoty jsou stejné jako ty, které záznam už má.';
 		}
 
-		$readOnly = [];
-
-		foreach (FormReader::controls($form, $hidden) as $control) {
-			if (!$control->isDisabled()) {
-				continue;
-			}
-
-			$readOnly[] = FormReader::label($control);
-		}
-
-		if ($readOnly) {
-			$warnings[] = \sprintf(
-				'Pole %s jsou v tomhle formuláři jen ke čtení; pokus o jejich změnu skončí chybou 403.',
-				'„' . \implode('", „', $readOnly) . '"',
-			);
-		}
+		// Pole jen ke čtení se tu dřív vypisovala všechna (u produktu ~640 cen s DPH) — i když se zápis žádného nedotkl. Zápis,
+		// který na ně sáhne, skončí 403 dřív, než sem dojde, a schéma je má označené `readOnly`; v náhledu jsou jen šum.
+		unset($form, $hidden);
 
 		return $warnings;
 	}

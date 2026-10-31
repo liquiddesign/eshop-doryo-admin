@@ -107,7 +107,7 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 				. 'Přes tenhle formulář jde jen editovat existující záznam.');
 		}
 
-		return new Response($this->formGateway->schema($target, $id, $query->string('item'), $query->string('parent')));
+		return new Response($this->formGateway->schema($target, $id, $query->string('item'), $query->string('parent'), $query->string('fields')));
 	}
 
 	/**
@@ -207,6 +207,9 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 								. 'Bez něj se vrátí seznam položek záznamu.'],
 						['name' => 'parent', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
 							'description' => 'Id nadřazeného záznamu u zakládání pod ním (v /v1/admin/pages má „createParent") — např. akce u nového kupónu.'],
+						['name' => 'fields', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
+							'description' => 'Jen vybraná pole: jména oddělená čárkou, * = cokoli (fields=prices-*-price,name-cs). Formulář produktu má přes '
+								. 'tisíc polí — čti jen ta, která potřebuješ; odpověď řekne ve "fieldsFilter", kolik vybralo z kolika.'],
 					],
 					'responses' => ['200' => ['description' => 'OK']],
 				],
