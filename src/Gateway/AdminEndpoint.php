@@ -83,7 +83,9 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 		unset($params);
 		$this->runner->identify($query);
 
-		return new Response($this->pageMap->build());
+		$detail = \in_array($query->string('detail'), ['1', 'true'], true);
+
+		return new Response($this->pageMap->build($detail, $query->string('q'), $query->string('presenter')));
 	}
 
 	/**
@@ -178,8 +180,18 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 					'description' => 'Stránky administrace, na které smí účet agenta, a u nich formuláře '
 						. 'a akce, které jde přes API použít. Odsud se vychází — jméno presenteru a formuláře '
 						. 'z téhle odpovědi se dosazuje do ostatních cest. „identity" říká, za koho brána jedná; '
-						. 's obchodníkem (merchantId) jsou to stránky a oprávnění jeho administrátorského účtu.',
-					'parameters' => [self::merchantParam()],
+						. 's obchodníkem (merchantId) jsou to stránky a oprávnění jeho administrátorského účtu. '
+						. 'Bez parametrů krátký přehled (jen jména formulářů, seznamů a akcí); celou stránku vrátí presenter, '
+						. 'hledání q, celou mapu detail=1.',
+					'parameters' => [
+						self::merchantParam(),
+						['name' => 'q', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
+							'description' => 'Hledání ve všech stránkách: celé stránky, kde se najdou všechna slova (název, skupina, formuláře, seznamy, akce i popisy; bez ohledu na diakritiku), např. kontakt.'],
+						['name' => 'presenter', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string'],
+							'description' => 'Celá jedna stránka mapy s cestami a popisy, např. Web:Admin:Setting.'],
+						['name' => 'detail', 'in' => 'query', 'required' => false, 'schema' => ['type' => 'string', 'enum' => ['0', '1']],
+							'description' => '1 = celá mapa se vším (velká — u modelu radši presenter nebo q).'],
+					],
 					'responses' => ['200' => ['description' => 'OK']],
 				],
 			],

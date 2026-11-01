@@ -228,7 +228,7 @@ v `openapi.json` (schémata těla inline, Kolego `$ref` v těle neresolvuje).
 
 | metoda a cesta | k čemu |
 | --- | --- |
-| `GET /v1/admin/pages` | mapa administrace z menu (`admin: menu:`) omezená na to, kam identita smí; u stránek formuláře, akce, gridy, hromadné úpravy a mazání z whitelistu; stránky z whitelistu, které v menu nejsou (fotky produktů), ve skupině „Mimo menu" |
+| `GET /v1/admin/pages` | mapa administrace z menu (`admin: menu:`) omezená na to, kam identita smí; u stránek formuláře, akce, gridy, hromadné úpravy a mazání z whitelistu; stránky z whitelistu, které v menu nejsou (fotky produktů), ve skupině „Mimo menu". Od 0.8 bez parametrů krátký přehled (jen jména), `?presenter=` celá jedna stránka, `?q=` celé stránky, kde se najdou všechna slova (bez diakritiky), `?detail=1` celá mapa jako do 0.7 |
 | `GET /v1/admin/forms/{presenter}/{form}?id=` | schéma polí (typ, popisek, nápověda, povinnost, číselníky, `readOnly`) a hodnoty záznamu; bez `id` schéma prázdného formuláře pro založení |
 | `POST /v1/admin/forms/{presenter}/{form}` | náhled (diff + token) nebo ostrý zápis; tělo bez `id` = náhled založení |
 | `POST /v1/admin/actions/{presenter}/{signal}` | akce (signál `handle*`); destruktivní chtějí `"confirm": true` |
