@@ -56,6 +56,8 @@ final class DoryoAdminDI extends CompilerExtension
 			'bulkConfirmFrom' => Expect::int(50)->min(1),
 			// strop nahrávaného souboru v bajtech (pole souborů ve formulářích, akce s `file`); 0 = nahrávání vypnuté
 			'maxUploadBytes' => Expect::int(0)->min(0),
+			// složka souborů e-shopu ({"eshop": "/userfiles/…"} = soubor, který už v e-shopu je); null = parametr userDir, jinak %wwwDir%/userfiles
+			'userFilesDir' => Expect::string()->nullable(),
 			// požadavek s obchodníkem (X-Doryo-Za / merchantId) jede pod jeho administrátorským účtem;
 			// vypnuto = brána jede jen pod servisním účtem a požadavek za obchodníka odmítne
 			'merchantAdministrators' => Expect::bool(false),
@@ -219,7 +221,10 @@ final class DoryoAdminDI extends CompilerExtension
 			->setFactory(PresenterRunner::class, ['identityResolver' => $identityResolver]);
 
 		$builder->addDefinition($this->prefix('previewToken'))->setFactory(PreviewToken::class);
-		$builder->addDefinition($this->prefix('uploads'))->setFactory(Uploads::class, ['maxBytes' => $config->maxUploadBytes]);
+		$parametry = $builder->parameters;
+		$userDir = $config->userFilesDir
+			?? (\is_string($parametry['userDir'] ?? null) ? $parametry['userDir'] : (\is_string($parametry['wwwDir'] ?? null) ? $parametry['wwwDir'] . '/userfiles' : null));
+		$builder->addDefinition($this->prefix('uploads'))->setFactory(Uploads::class, ['maxBytes' => $config->maxUploadBytes, 'userDir' => $userDir]);
 		$builder->addDefinition($this->prefix('pageMap'))->setFactory(PageMap::class, [
 			'describers' => \array_map(self::serviceArgument(...), $config->describers),
 		]);

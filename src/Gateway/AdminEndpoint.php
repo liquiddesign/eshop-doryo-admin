@@ -272,11 +272,12 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									],
 									'files' => [
 										'type' => 'object',
-										'description' => 'Pole typu soubor (ve schématu mají „upload") => {"name": "<název>", "content": "<obsah v base64>"}. '
-											. 'Nový soubor nahradí ten dnešní; brána ho nahrává, jen když to e-shop zapnul (maxUploadBytes).',
+										'description' => 'Pole typu soubor (ve schématu mají „upload") => {"name": "<název>", "content": "<obsah v base64>"}, '
+											. 'nebo soubor, který už v e-shopu je (fotka produktu, logo): {"eshop": "<adresa obrázku z webu nebo cesta /userfiles/…>"} — '
+											. 'e-shop si ho vezme z disku, nic se nestahuje. Nový soubor nahradí ten dnešní; brána ho nahrává, jen když to e-shop zapnul (maxUploadBytes).',
 										'additionalProperties' => [
 											'type' => 'object',
-											'properties' => ['name' => ['type' => 'string'], 'content' => ['type' => 'string', 'format' => 'byte']],
+											'properties' => ['name' => ['type' => 'string'], 'content' => ['type' => 'string', 'format' => 'byte'], 'eshop' => ['type' => 'string']],
 										],
 									],
 									'dryRun' => ['type' => 'boolean', 'description' => 'true = jen validace a diff, nic se nezapíše.'],
@@ -369,8 +370,8 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									'file' => [
 										'type' => 'object',
 										'description' => 'Soubor pro akci, která ho bere (v /v1/admin/pages má „file"), například fotka k produktu: '
-											. '{"name": "<název>", "content": "<obsah v base64>"}.',
-										'properties' => ['name' => ['type' => 'string'], 'content' => ['type' => 'string', 'format' => 'byte']],
+											. '{"name": "<název>", "content": "<obsah v base64>"}, nebo soubor, který už v e-shopu je: {"eshop": "<adresa nebo cesta /userfiles/…>"}.',
+										'properties' => ['name' => ['type' => 'string'], 'content' => ['type' => 'string', 'format' => 'byte'], 'eshop' => ['type' => 'string']],
 									],
 									'actor' => ['type' => 'string', 'description' => 'Jméno člověka, za kterého se akce spouští; jde do auditu jen jako popisek.'],
 									'merchantId' => self::merchantProperty(),
