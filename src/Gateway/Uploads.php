@@ -22,7 +22,11 @@ final class Uploads
 	/** @var list<string> dočasné soubory tohoto požadavku; mažou se na konci, ať v tempu nezůstávají */
 	private array $temporary = [];
 
-	public function __construct(private int $maxBytes)
+	/**
+	 * @param string|null $userDir Složka souborů e-shopu (`userfiles`) — odsud jde vzít soubor, který už v e-shopu je
+	 *     (`{"eshop": "/userfiles/…"}`), bez stahování přes web; null = jen soubory v těle
+	 */
+	public function __construct(private int $maxBytes, private ?string $userDir = null)
 	{
 	}
 
@@ -48,15 +52,18 @@ final class Uploads
 				. '(doryoAdmin: maxUploadBytes). Soubor tedy nahrát nejde, ostatní pole ano.');
 		}
 
-		if (!\is_array($spec) || !\is_string($spec['name'] ?? null) || !\is_string($spec['content'] ?? null)) {
+		if (\is_array($spec) && \is_string($spec['eshop'] ?? null)) {
+			[$name, $data] = $this->zEshopu($spec['eshop'], $label);
+		} elseif (!\is_array($spec) || !\is_string($spec['name'] ?? null) || !\is_string($spec['content'] ?? null)) {
 			throw ApiException::badRequest(\sprintf(
-				'Soubor pro „%s" se posílá jako objekt {"name": "<název souboru>", "content": "<obsah v base64>"}.',
+				'Soubor pro „%s" se posílá jako objekt {"name": "<název souboru>", "content": "<obsah v base64>"}, '
+				. 'nebo soubor, který už v e-shopu je: {"eshop": "<adresa nebo cesta /userfiles/…>"}.',
 				$label,
 			));
+		} else {
+			$name = Strings::trim($spec['name']);
+			$data = \base64_decode($spec['content'], true);
 		}
-
-		$name = Strings::trim($spec['name']);
-		$data = \base64_decode($spec['content'], true);
 
 		if ($name === '' || $data === false || $data === '') {
 			throw ApiException::badRequest(\sprintf('Soubor pro „%s" nemá název, nebo jeho obsah není platné base64.', $label));
@@ -111,6 +118,46 @@ final class Uploads
 		}
 
 		return ['upload' => $upload, 'file' => $file];
+	}
+
+	/**
+	 * Soubor, který už v e-shopu je (fotka produktu, logo), přímo z disku — Kolego na testovací kopii za VPN obrázek z webu
+	 * stáhnout neumí (1. 11. 2026). Bere adresu webu i cestu; jen soubor uvnitř složky souborů e-shopu (`userDir`).
+	 * @return array{0: string, 1: string}
+	 * @throws \DoryoApi\Http\ApiException
+	 */
+	private function zEshopu(string $kde, string $label): array
+	{
+		$koren = $this->userDir !== null ? \realpath($this->userDir) : false;
+
+		if ($koren === false) {
+			throw new ApiException(422, 'Soubory e-shopu nejsou k dispozici', 'Brána na tomhle e-shopu nezná složku souborů '
+				. '(doryoAdmin: userFilesDir) — pošli soubor v těle jako {"name", "content"}.');
+		}
+
+		$cesta = \rawurldecode((string) (\parse_url(Strings::trim($kde), \PHP_URL_PATH) ?? ''));
+		$cesta = \ltrim($cesta, '/');
+		$slozka = \basename($koren) . '/';
+
+		if (\str_starts_with($cesta, $slozka)) {
+			$cesta = \substr($cesta, \strlen($slozka));
+		}
+
+		$plna = $cesta !== '' ? \realpath($koren . '/' . $cesta) : false;
+
+		if ($plna === false || !\str_starts_with($plna, $koren . \DIRECTORY_SEPARATOR) || !\is_file($plna) || !\is_readable($plna)) {
+			throw new ApiException(404, 'Soubor v e-shopu není', \sprintf(
+				'Pro „%s" jsem v souborech e-shopu nenašel %s — beru jen soubory ze složky %s (adresa obrázku z webu nebo cesta /%s…).',
+				$label,
+				$kde,
+				\basename($koren),
+				$slozka,
+			));
+		}
+
+		$data = (string) \file_get_contents($plna);
+
+		return [\basename($plna), $data];
 	}
 
 	public function cleanup(): void
