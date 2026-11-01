@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DoryoAdmin\Gateway;
 
 use Admin\Controls\IMenuFactory;
+use Nette\Utils\Strings;
 
 /**
  * Mapa administrace: co v ní vůbec je a co z toho smí identita požadavku (servisní účet agenta,
@@ -27,10 +28,20 @@ final class PageMap
 	) {
 	}
 
+	/** Klíče řádku stránky, které vypisuje brána sama; co přidají projektové doplňky, je v přehledu jen jménem (`dalsi`). */
+	private const KLICE = ['group', 'label', 'presenter', 'link', 'access', 'forms', 'grids', 'actions', 'bulk', 'delete'];
+
 	/**
+	 * Mapa administrace (0.8, Kolego 1. 11. 2026): celá mapa MC Profi má 65 kB a model z ní dostával jen začátek — 15 stránek
+	 * z 38, Kontakty a sítě ani Mikrotexty mezi nimi nebyly, a Kolego pak tvrdilo, že kontaktní stránku změnit nejde.
+	 *
+	 * - bez parametrů krátký přehled: u stránky jen jména formulářů, seznamů, akcí, hromadných úprav a mazání,
+	 * - `presenter` = celá jedna stránka, `q` = celé stránky, kde se najdou všechna slova (název, skupina, formuláře, seznamy,
+	 *   akce i jejich popisy, bez ohledu na diakritiku), `detail` = celá mapa jako do 0.7.
+	 *
 	 * @return array<string, mixed>
 	 */
-	public function build(): array
+	public function build(bool $detail = true, ?string $q = null, ?string $jenStranka = null): array
 	{
 		$items = [];
 		$listed = [];
@@ -66,6 +77,31 @@ final class PageMap
 			}
 		}
 
+		$vyber = null;
+
+		if ($jenStranka !== null && $jenStranka !== '') {
+			$items = \array_values(\array_filter($items, static fn (array $page): bool => $page['presenter'] === $jenStranka));
+			$vyber = $items ? \sprintf('Jen stránka %s.', $jenStranka) : \sprintf('Stránku %s mapa nezná, nebo na ni účet nesmí — jména jsou v krátkém přehledu.', $jenStranka);
+		} elseif ($q !== null && \trim($q) !== '') {
+			$slova = \array_filter(\preg_split('~\s+~', self::hledatelne($q)) ?: []);
+			$items = \array_values(\array_filter($items, static function (array $page) use ($slova): bool {
+				$text = self::hledatelne((string) \json_encode($page, \JSON_UNESCAPED_UNICODE));
+
+				foreach ($slova as $slovo) {
+					if (!\str_contains($text, $slovo)) {
+						return false;
+					}
+				}
+
+				return true;
+			}));
+			$vyber = $items
+				? \sprintf('Stránky, kde se najde „%s" (název, formuláře, seznamy, akce i popisy).', \trim($q))
+				: \sprintf('„%s" se nenašlo v žádné stránce — zkus jiné slovo, nebo projdi krátký přehled (bez parametrů).', \trim($q));
+		} elseif (!$detail) {
+			$items = \array_map([self::class, 'prehled'], $items);
+		}
+
 		return [
 			'identity' => [
 				'administrator' => Identities::label($this->runner->getIdentity()),
@@ -75,11 +111,52 @@ final class PageMap
 			'version' => GatewayConfig::version(),
 			'items' => $items,
 			'znacky' => $this->znacky(),
-			'note' => 'Vypisují se jen stránky, na které smí účet z „identity". Měnit jde to, co má vyplněné „forms", '
+			'note' => ($vyber !== null ? $vyber . ' ' : '')
+				. (!$detail && $vyber === null
+					? 'Krátký přehled: u stránky jen jména formulářů (forms), seznamů (grids), akcí (actions), hromadných úprav (bulk) '
+						. 'a mazání (delete). Celou stránku s cestami a popisy vrátí ?presenter=<presenter>, hledání ve všech stránkách '
+						. '?q=<slova> (třeba q=kontakt), celou mapu ?detail=1. Když něco v přehledu nevidíš, hledej dřív, než řekneš, že to nejde. '
+					: '')
+				. 'Vypisují se jen stránky, na které smí účet z „identity". Měnit jde to, co má vyplněné „forms", '
 				. '„actions" nebo „bulk", mazat, co má „delete", číst jde, co má „grids"; další klíče u stránky jsou cesty projektu. U ostatních '
 				. 'stránek brána jen ví, že existují. Formulář s „create": true umí i zakládat nový záznam — přečti si '
 				. 'u něj „createNote".',
 		];
+	}
+
+	/**
+	 * Řádek krátkého přehledu: kde stránka je a co na ní jde, jen jmény.
+	 * @param array<string, mixed> $page
+	 * @return array<string, mixed>
+	 */
+	private static function prehled(array $page): array
+	{
+		$row = ['group' => $page['group'], 'label' => $page['label'], 'presenter' => $page['presenter'], 'access' => $page['access']];
+
+		foreach (['forms' => 'form', 'grids' => 'grid', 'actions' => 'action', 'bulk' => 'grid', 'delete' => 'grid'] as $klic => $jmeno) {
+			if (empty($page[$klic]) || !\is_array($page[$klic])) {
+				continue;
+			}
+
+			$row[$klic] = \array_values(\array_map(
+				static fn (array $x): string => (string) ($x['label'] ?? $x[$jmeno] ?? ''),
+				$page[$klic],
+			));
+		}
+
+		$dalsi = \array_values(\array_diff(\array_keys($page), self::KLICE));
+
+		if ($dalsi) {
+			$row['dalsi'] = $dalsi;
+		}
+
+		return $row;
+	}
+
+	/** Text k hledání: malá písmena bez diakritiky. */
+	private static function hledatelne(string $s): string
+	{
+		return Strings::lower(Strings::toAscii($s));
 	}
 
 	/**
