@@ -123,6 +123,8 @@ final class DoryoAdminDI extends CompilerExtension
 				'fileImage' => Expect::bool(false),
 				// akce nad položkou záznamu: parametr s id položky, entita, sloupec s id záznamu (`idParam`), popisek
 				'item' => Expect::arrayOf('string', 'string'),
+				// akce jen maže cache webu (výpisy, menu, počty), data nemění — Kolego ji smí nabídnout po zápisu
+				'cache' => Expect::bool(false),
 			])->castTo('array')),
 			// seznamy (gridy), které smí agent číst; popis je pro model, grid sám zná jen hlavičky
 			'grids' => Expect::listOf(Expect::structure([
