@@ -21,6 +21,8 @@ final class ActionTarget
 	 * @param bool $fileImage Soubor musí být obrázek
 	 * @param \DoryoAdmin\Gateway\ChildItem|null $item Akce nad položkou záznamu (odebrat položku objednávky): parametr
 	 *     `item->param` nese id položky a brána ověří, že patří k záznamu z `idParam`
+	 * @param bool $cache Akce jen maže uloženou cache webu (výpisy, menu, počty) a data nemění — Kolego ji pak smí
+	 *     spustit bez karty na testu a nabídnout ji po zápisu. Jen bez parametrů, záznamu a souboru (hlídá GatewayConfig).
 	 */
 	public function __construct(
 		public readonly string $presenter,
@@ -35,6 +37,7 @@ final class ActionTarget
 		public readonly ?string $file = null,
 		public readonly bool $fileImage = false,
 		public readonly ?ChildItem $item = null,
+		public readonly bool $cache = false,
 	) {
 	}
 

@@ -20,7 +20,7 @@ final class GatewayConfig
 	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
 	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
 	 */
-	public const VERSION = '0.6.0';
+	public const VERSION = '0.7.0';
 
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];
@@ -102,7 +102,14 @@ final class GatewayConfig
 				file: isset($action['file']) ? (string) $action['file'] : null,
 				fileImage: (bool) ($action['fileImage'] ?? false),
 				item: ChildItem::fromConfig($action['item'] ?? null),
+				cache: (bool) ($action['cache'] ?? false),
 			);
+
+			// Příznak „jen cache" čte Kolego jako „data se nemění" (bez karty na testu) — smí ho proto mít jen akce,
+			// které nic nepředáváme: žádné parametry, záznam, soubor ani položka a nic nevratného.
+			if ($target->cache && ($target->params || $target->entity !== null || $target->idParam !== null || $target->file !== null || $target->item !== null || $target->destructive)) {
+				throw new \LogicException(\sprintf('doryoAdmin: akce %s s „cache: true" nesmí mít params, entity, idParam, file, item ani destructive.', $target->getEndpoint()));
+			}
 
 			$this->actions[self::key($target->presenter, $target->signal)] = $target;
 		}

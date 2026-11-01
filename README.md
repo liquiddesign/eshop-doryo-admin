@@ -82,7 +82,7 @@ procento se v nich píše `%%` (Nette jinak `%…%` bere jako parametr) a text n
 | položka | klíče (výchozí) |
 | --- | --- |
 | `forms` | `presenter`*, `parameter`* (parametr akce se záznamem), `form` (`form`), `action` (`edit`), `label`, `description`, `create` (`false`), `createAction` (`new`), `entity` (kvůli zakládání a značkám), `createNote`, `hidden` (pole, která brána nevydá ani nezmění), `customerEmail` (`false`), `znacka` (druh značky na webu), `bublina` (pole do bubliny u prvku), `createParameter` (parametr zakládací akce s nadřazeným záznamem), `item` (formulář jedné položky záznamu, viz níž), `popisky` (popisky polí bez vlastního popisku, viz níž) |
-| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`), `file` (HTML jméno souboru, který signál čte z požadavku), `fileImage` (`false`), `item` (akce nad položkou záznamu) |
+| `actions` | `presenter`*, `signal`* (bez `handle`), `action` (`default`), `label`, `params` (jména parametrů signálu), `destructive` (`false`), `entity`, `idParam`, `customerEmail` (`false`), `file` (HTML jméno souboru, který signál čte z požadavku), `fileImage` (`false`), `item` (akce nad položkou záznamu), `cache` (`false` — akce jen maže cache webu a data nemění; bez `params`, `entity`, `idParam`, `file`, `item` a `destructive`, v mapě `"cache": true`) |
 | `grids` | `presenter`*, `grid` (`grid`), `action` (`default`), `label`, `description`, `filters` (ruční popis filtrů bez popisku), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
 | `bulk` | `presenter`*, `entity`*, `grid` (`grid`), `form` (`form`, detailový formulář, ze kterého si hromadná úprava půjčuje vstupy), `action` (`bulkEdit`), `label`, `bulkConfirmFrom`, `filters` |
 | `delete` | `presenter`*, `entity`* (entita řádků — podle ní brána popíše a po smazání ověří, co zmizelo), `grid` (`grid`), `action` (`default`), `label`, `description` (co smazání znamená), `parameter` (seznam patří k záznamu), `tabParameter` (persistentní parametr se záložkou) |
@@ -128,6 +128,12 @@ doryoAdmin:
             entity: Eshop\DB\Order
             label: 'Stornovat objednávku'
             destructive: true
+        -
+            # cache webu: po zápisu přes bránu se změna na webu ukáže až po smazání (Kolego to nabídne)
+            presenter: 'Eshop:Admin:Scripts'
+            signal: clearCache
+            label: 'Smazat cache webu'
+            cache: true
 ```
 
 ## Značky na webu (Kolego nad e-shopem)
