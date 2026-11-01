@@ -247,8 +247,15 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 						'content' => ['application/json' => [
 							'schema' => [
 								'type' => 'object',
-								'required' => ['values'],
 								'properties' => [
+									'records' => [
+										'type' => 'array',
+										'maxItems' => FormGateway::MAX_RECORDS,
+										'description' => 'Víc záznamů týmž formulářem najednou (místo "id" a "values"): [{"id": "…", "values": {…}}, …], '
+											. 'každý s vlastními hodnotami — jeden náhled, jeden token. Jen úpravy, bez souborů a položek. Ostrý zápis ukládá '
+											. 'záznam po záznamu; co administrace neuloží, vrátí ve "failed".',
+										'items' => ['type' => 'object', 'properties' => ['id' => ['type' => 'string'], 'values' => ['type' => 'object', 'additionalProperties' => true]]],
+									],
 									'id' => ['type' => 'string', 'description' => 'Id upravovaného záznamu. '
 										. 'U zakládání se v náhledu vynechá (brána ho vygeneruje a vrátí) a při ostrém '
 										. 'zápisu se pošle to, které náhled vrátil.'],
@@ -284,6 +291,13 @@ final class AdminEndpoint implements Endpoint, MethodAware, SpecificationPart
 									'values' => ['phone' => '+420 601 000 000'],
 									'dryRun' => true,
 									'actor' => 'Jan Novák',
+								]],
+								'víc záznamů najednou' => ['value' => [
+									'records' => [
+										['id' => 'p1', 'values' => ['visibility-list_main-recommended' => true]],
+										['id' => 'p2', 'values' => ['visibility-list_main-recommended' => false]],
+									],
+									'dryRun' => true,
 								]],
 								'náhled založení nového záznamu' => ['value' => [
 									'values' => ['company' => 'Nováková s.r.o.', 'email' => 'novak@example.com', 'fullname' => 'Jan Novák'],

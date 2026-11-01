@@ -20,7 +20,7 @@ final class GatewayConfig
 	 * Verze balíku, když se nedá zjistit z Composeru (balík nasazený mimo composer install).
 	 * Skutečná verze se bere z tagu přes {@see version()}, aby s vydáním nedriftovala.
 	 */
-	public const VERSION = '0.8.0';
+	public const VERSION = '0.9.0';
 
 	/** @var array<string, \DoryoAdmin\Gateway\FormTarget> */
 	private array $forms = [];

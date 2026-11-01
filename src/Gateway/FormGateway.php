@@ -125,6 +125,10 @@ final class FormGateway
 	 */
 	public function submit(FormTarget $target, array $body): array
 	{
+		if (isset($body['records'])) {
+			return $this->submitMany($target, $body);
+		}
+
 		$dryRun = (bool) ($body['dryRun'] ?? false);
 
 		// Zakládání se od editace pozná výhradně z těla, ne z toho, že id v databázi není:
@@ -230,6 +234,198 @@ final class FormGateway
 		});
 	}
 
+	/** Nejvíc záznamů v jednom zápisu přes `records` (každý jde přes formulář zvlášť — dva průchody presenterem). */
+	public const MAX_RECORDS = 100;
+
+	/**
+	 * Víc záznamů týmž formulářem (0.9, Kolego 1. 11. 2026): `records: [{id, values}, …]` — každý záznam s vlastními hodnotami
+	 * (doporučené produkty: 8× zapnout, 8× vypnout), jeden náhled, jeden token a jedna karta místo karty na každý záznam.
+	 * Jen úpravy existujících záznamů, bez souborů a položek. Náhled projde všechny záznamy formulářem a vrátí rozdíl každého;
+	 * ostrý zápis uloží záznam po záznamu skutečným formulářem (validace, `onSuccess`, úklid cache jako po „Uložit") — není
+	 * atomický: co administrace neuloží, vrátí v `failed` a ostatní zůstanou zapsané.
+	 * @param array<mixed> $body
+	 * @return array<string, mixed>
+	 */
+	private function submitMany(FormTarget $target, array $body): array
+	{
+		$dryRun = (bool) ($body['dryRun'] ?? false);
+		$records = $body['records'];
+
+		if (!\is_array($records) || !$records || !\array_is_list($records)) {
+			throw ApiException::badRequest('"records" je neprázdný seznam [{"id": "…", "values": {…}}, …].');
+		}
+
+		if (\count($records) > self::MAX_RECORDS) {
+			throw ApiException::badRequest(\sprintf('Najednou jde nejvýš %d záznamů — rozděl zápis na víc částí.', self::MAX_RECORDS));
+		}
+
+		foreach (['id', 'values', 'files', 'file', 'item', 'parent', 'create'] as $klic) {
+			if (isset($body[$klic])) {
+				throw ApiException::badRequest(\sprintf('S "records" se "%s" neposílá — každý záznam nese své "id" a "values"; soubory, položky a zakládání jdou jen po jednom.', $klic));
+			}
+		}
+
+		$seznam = [];
+
+		foreach ($records as $i => $record) {
+			$id = \is_array($record) && \is_string($record['id'] ?? null) && $record['id'] !== '' ? $record['id'] : null;
+			$values = \is_array($record) ? ($record['values'] ?? null) : null;
+
+			if ($id === null || !\is_array($values) || !$values || \array_is_list($values)) {
+				throw ApiException::badRequest(\sprintf('Záznam %d v "records" potřebuje "id" a neprázdné "values" (objekt „jméno pole => hodnota").', $i + 1));
+			}
+
+			if (isset($seznam[$id])) {
+				throw ApiException::badRequest(\sprintf('Záznam %s je v "records" dvakrát — hodnoty jednoho záznamu dej do jednoho "values".', $id));
+			}
+
+			$seznam[$id] = $values;
+		}
+
+		return $this->runner->withAdministrator(function () use ($target, $seznam, $dryRun, $body): array {
+			$pripravene = [];
+			$changes = [];
+			$state = [];
+
+			foreach ($seznam as $id => $values) {
+				$id = (string) $id;
+				$zalozka = $this->zalozka($target, $id, $values, null);
+				$form = $this->open($target, $id, null, $zalozka);
+				$before = FormReader::values($form);
+
+				self::apply($form, $values, $target->hidden);
+
+				$diff = self::diff($form, $before, FormReader::values($form));
+				$changes[$id] = self::changes($diff) + ($zalozka ? ['_tab' => (string) \reset($zalozka)] : []);
+				$state[$id] = $before;
+				$pripravene[$id] = ['form' => $form, 'diff' => $this->popisky->pole($target, $diff), 'zalozka' => $zalozka];
+			}
+
+			$scope = 'forms:' . $target->presenter . '/' . $target->form;
+			$klic = 'records:' . \count($seznam) . ':' . \substr(\hash('sha256', \implode(',', \array_keys($seznam))), 0, 16);
+
+			if ($dryRun) {
+				$out = [];
+				$valid = true;
+
+				foreach ($pripravene as $id => $p) {
+					$p['form']->validate();
+					$errors = self::errors($p['form']);
+					$valid = $valid && !$errors;
+					$out[] = ['id' => (string) $id, 'label' => $this->nazevZaznamu($target, (string) $id), 'valid' => !$errors, 'diff' => $p['diff'], 'errors' => $errors,
+						'warnings' => self::warnings($p['form'], $p['diff'], $target->hidden)];
+				}
+
+				$preview = $this->previewToken->issue($scope, $klic, $changes, $state);
+
+				return [
+					'dryRun' => true,
+					'count' => \count($out),
+					'valid' => $valid,
+					'previewToken' => $valid ? $preview['token'] : null,
+					'expiresAt' => $valid ? $preview['expiresAt'] : null,
+					'records' => $out,
+					'customerEmail' => $target->customerEmail,
+					'note' => 'Ostrý zápis pošli se stejnými "records" a s previewTokenem. Ukládá se záznam po záznamu; co administrace neuloží, vrátí ve "failed", pole, která uložení tiše přeskočí, v "notSaved" u záznamu.',
+				];
+			}
+
+			$this->previewToken->verify(\is_string($body['previewToken'] ?? null) ? $body['previewToken'] : null, $scope, $klic, $changes, $state);
+
+			$hotove = [];
+			$chyby = [];
+
+			foreach ($pripravene as $id => $p) {
+				try {
+					$r = $this->write($target, (string) $id, $p['form'], [], $p['diff'], false, PresenterRunner::actor($body), null, null, $p['zalozka']);
+					$hotove[] = ['id' => (string) $id, 'label' => $this->nazevZaznamu($target, (string) $id), 'diff' => $r['diff']] + (isset($r['notSaved']) ? ['notSaved' => $r['notSaved']] : []);
+				} catch (ApiException $e) {
+					$chyby[] = ['id' => (string) $id, 'label' => $this->nazevZaznamu($target, (string) $id), 'status' => $e->getStatus(), 'error' => \trim($e->getTitle() . ': ' . $e->getMessage(), ': ')];
+				}
+			}
+
+			return [
+				'dryRun' => false,
+				'written' => \count($hotove),
+				'failed' => $chyby,
+				'records' => $hotove,
+			];
+		});
+	}
+
+	/**
+	 * Pole z rozdílu, která po uložení v záznamu nejsou: formulář se otevře znovu a hodnota se porovná s tou, kterou zápis
+	 * nesl. Soubory a pole, která po uložení formulář nevrací, se nekontrolují.
+	 * @param array<array<string, mixed>> $diff
+	 * @param array<string, string> $zalozka
+	 * @return list<array<string, mixed>>
+	 */
+	private function neulozeno(FormTarget $target, string $id, ?string $item, array $zalozka, array $diff): array
+	{
+		$chtene = \array_filter($diff, static fn (array $d): bool => isset($d['field']) && !isset($d['file']));
+
+		if (!$chtene) {
+			return [];
+		}
+
+		try {
+			$po = FormReader::values($this->open($target, $id, $item, $zalozka));
+		} catch (\Throwable) {
+			return [];   // znovu otevřít nejde (záznam po uložení jinde) — kontrola se vynechá, zápis platí
+		}
+
+		$out = [];
+
+		foreach ($chtene as $d) {
+			$pole = (string) $d['field'];
+
+			if (!\array_key_exists($pole, $po) || self::stejne($po[$pole], $d['to'] ?? null)) {
+				continue;
+			}
+
+			$out[] = ['field' => $pole, 'label' => $d['label'] ?? $pole, 'wanted' => $d['to'] ?? null, 'now' => $po[$pole]];
+		}
+
+		return $out;
+	}
+
+	private static function stejne(mixed $a, mixed $b): bool
+	{
+		$norm = static fn (mixed $v): string => \is_array($v) ? (string) \json_encode(\array_values(\array_map('strval', $v))) : (\is_bool($v) ? ($v ? '1' : '0') : (string) $v);
+
+		return $norm($a) === $norm($b);
+	}
+
+	/** Čím se záznam v kartě a výsledku jmenuje: kód a název z entity formuláře, jinak nic. */
+	private function nazevZaznamu(FormTarget $target, string $id): ?string
+	{
+		if ($target->entity === null) {
+			return null;
+		}
+
+		try {
+			$entity = $this->connection->findRepository($target->entity)->one($id);
+		} catch (\Throwable) {
+			return null;
+		}
+
+		if ($entity === null) {
+			return null;
+		}
+
+		$casti = [];
+
+		foreach (['code', 'name'] as $property) {
+			$value = self::property($entity, $property);
+
+			if ($value !== null && $value !== '') {
+				$casti[] = \strip_tags($value);
+			}
+		}
+
+		return $casti ? \implode(' · ', $casti) : null;
+	}
+
 	/**
 	 * Ostrý zápis: druhý průchod presenterem, tentokrát POSTem na signál formuláře, takže se
 	 * odehraje přesně to, co by se stalo po kliknutí na „Uložit" — validace, `onSuccess`,
@@ -318,7 +514,11 @@ final class FormGateway
 		];
 
 		if (!$create) {
-			return $response;
+			// Formulář „Uloženo" řekne i tehdy, když `onSuccess` hodnotu tiše přeskočí (MC Profi: „Doporučený" v seznamu
+			// viditelnosti, kde produkt není aktivní — 1. 11. 2026). Co po uložení v záznamu není, vrátí brána v `notSaved`.
+			$neulozeno = $this->neulozeno($target, $id, $item, $zalozka, $diff);
+
+			return $neulozeno ? $response + ['notSaved' => $neulozeno] : $response;
 		}
 
 		$response['created'] = true;
