@@ -229,6 +229,8 @@ v `openapi.json` (schémata těla inline, Kolego `$ref` v těle neresolvuje).
 | metoda a cesta | k čemu |
 | --- | --- |
 | `GET /v1/admin/pages` | mapa administrace z menu (`admin: menu:`) omezená na to, kam identita smí; u stránek formuláře, akce, gridy, hromadné úpravy a mazání z whitelistu; stránky z whitelistu, které v menu nejsou (fotky produktů), ve skupině „Mimo menu". Od 0.8 bez parametrů krátký přehled (jen jména), `?presenter=` celá jedna stránka, `?q=` celé stránky, kde se najdou všechna slova (bez diakritiky), `?detail=1` celá mapa jako do 0.7 |
+| `POST /v1/admin/forms/{presenter}/{form}` s `records` | od 0.9 víc záznamů týmž formulářem: `[{id, values}]` (do 100), jeden náhled a token, ostrý zápis záznam po záznamu skutečným formulářem; co administrace neuloží, vrátí `failed` (není atomické) |
+| kontrola po uložení | od 0.9 formulář po ostrém zápisu otevře záznam znovu a pole, která uložení tiše přeskočilo (MC Profi: „Doporučený" v seznamu viditelnosti, kde produkt není aktivní), vrátí v `notSaved` — u jednoho zápisu i u každého záznamu z `records` |
 | `GET /v1/admin/forms/{presenter}/{form}?id=` | schéma polí (typ, popisek, nápověda, povinnost, číselníky, `readOnly`) a hodnoty záznamu; bez `id` schéma prázdného formuláře pro založení |
 | `POST /v1/admin/forms/{presenter}/{form}` | náhled (diff + token) nebo ostrý zápis; tělo bez `id` = náhled založení |
 | `POST /v1/admin/actions/{presenter}/{signal}` | akce (signál `handle*`); destruktivní chtějí `"confirm": true` |
