@@ -186,12 +186,16 @@ final class FormGateway
 			$changes = self::changes($diff) + \array_filter(['_parent' => $parent, '_item' => $item, '_tab' => $zalozka ? (string) \reset($zalozka) : null], static fn (?string $v): bool => $v !== null);
 			$diff = $this->popisky->pole($target, $diff);   // popisky až po otisku změn — token se váže na hodnoty, ne na jména
 			$scope = ($create ? 'create:' : 'form:') . $target->presenter . '/' . $target->form;
+			// Stav, na který se token váže: u úpravy hodnoty záznamu před změnou. U založení záznam ještě není — výchozí hodnoty
+			// nového formuláře se mění samy (článek: „Publikováno" = teď), a zápis schválený o minutu později pak padal na
+			// „Záznam se mezitím změnil" (Kolego, 1. 11. 2026). Že id mezitím nikdo nezabral, hlídá `assertFree`.
+			$stav = $create ? [] : $before;
 
 			if ($dryRun) {
 				$form->validate();
 
 				$errors = self::errors($form);
-				$preview = $this->previewToken->issue($scope, $id, $changes, $before);
+				$preview = $this->previewToken->issue($scope, $id, $changes, $stav);
 				$response = [
 					'dryRun' => true,
 					'create' => $create,
@@ -225,7 +229,7 @@ final class FormGateway
 				$scope,
 				$id,
 				$changes,
-				$before,
+				$stav,
 			);
 
 			$result = $this->write($target, $id, $form, $uploads, $diff, $create, PresenterRunner::actor($body), $parent, $item, $zalozka);
