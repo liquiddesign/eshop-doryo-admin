@@ -41,6 +41,18 @@ final class Uploads
 	}
 
 	/**
+	 * Jak se soubor posílá — do poznámky u pole a do chyb. Soubor z e-shopu (`{"eshop": …}`) jen, když brána zná složku souborů.
+	 */
+	public function howTo(): string
+	{
+		$jak = '{"name": "<název>", "content": "<base64>"}';
+
+		return $this->userDir !== null && \realpath($this->userDir) !== false
+			? $jak . ', nebo soubor, který už v e-shopu je (fotka produktu, logo): {"eshop": "<adresa obrázku nebo cesta /userfiles/…>"}'
+			: $jak;
+	}
+
+	/**
 	 * Soubor z těla: `{"name": "logo.png", "content": "<base64>"}` → upload a popis pro náhled.
 	 * @return array{upload: \Nette\Http\FileUpload, file: array<string, mixed>}
 	 * @throws \DoryoApi\Http\ApiException
