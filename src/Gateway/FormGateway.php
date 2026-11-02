@@ -812,9 +812,10 @@ final class FormGateway
 
 			if ($control instanceof UploadControl && !$control->isDisabled()) {
 				throw ApiException::badRequest(\sprintf(
-					'Pole „%s" (%s) je soubor — posílá se v „files" jako {"name", "content" (base64)}, ne ve „values".',
+					'Pole „%s" (%s) je soubor — posílá se v „files" jako %s, ne ve „values".',
 					FormReader::label($control),
 					$name,
+					$this->uploads->howTo(),
 				));
 			}
 
@@ -921,8 +922,8 @@ final class FormGateway
 			$fields[$i]['upload'] = [
 				'image' => self::wantsImage($control),
 				'current' => self::currentUpload($control),
-				'note' => 'Soubor pošli v těle jako "files": {"' . $field['name'] . '": {"name": "<název>", "content": "<base64>"}}; '
-					. 'nový soubor nahradí ten dnešní.',
+				'note' => 'Soubor pošli v těle jako "files": {"' . $field['name'] . '": <soubor>}, kde <soubor> je '
+					. $this->uploads->howTo() . '; nový soubor nahradí ten dnešní.',
 			];
 		}
 
