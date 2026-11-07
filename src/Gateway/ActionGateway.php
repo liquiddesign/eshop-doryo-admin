@@ -43,7 +43,7 @@ final class ActionGateway
 		}
 
 		if ($target->file !== null && !isset($body['file'])) {
-			throw ApiException::badRequest(\sprintf('Akce „%s" nahrává soubor — v těle chybí "file": {"name", "content" (base64)}.', $target->label));
+			throw ApiException::badRequest(\sprintf('Akce „%s" nahrává soubor — v těle chybí "file": %s.', $target->label, $this->uploads->howTo()));
 		}
 
 		$upload = $target->file !== null ? $this->uploads->read($body['file'], $target->label, $target->fileImage) : null;
