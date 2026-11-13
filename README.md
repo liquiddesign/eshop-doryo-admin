@@ -251,7 +251,7 @@ POST /doryo-api/v1/admin/forms/Eshop:Admin:Customer/form
 
 ```json
 {
-  "dryRun": true, "create": false, "id": "a1b2c3", "valid": true,
+  "dryRun": true, "create": false, "id": "a1b2c3", "label": "Jan Novák", "valid": true,
   "previewToken": "eyJ2Ijoi….9f3c", "expiresAt": "2026-10-12T14:32:00+02:00",
   "diff": [{"field": "phone", "label": "Telefon", "from": "+420 602 111 222", "to": "+420 601 000 111"}],
   "errors": [],

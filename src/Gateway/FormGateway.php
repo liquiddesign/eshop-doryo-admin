@@ -200,6 +200,8 @@ final class FormGateway
 					'dryRun' => true,
 					'create' => $create,
 					'id' => $id,
+					// kartu ke schválení čte člověk: „123LW · Rodina pesánků", ne uuid
+					'label' => $create ? null : $this->nazevZaznamu($target, $id),
 					'valid' => !$errors,
 					'previewToken' => $errors ? null : $preview['token'],
 					'expiresAt' => $errors ? null : $preview['expiresAt'],
