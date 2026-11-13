@@ -121,7 +121,7 @@ final class FormReader
 	 */
 	public static function name(BaseControl $control): string
 	{
-		return $control->lookupPath(Form::class) ?? (string) $control->getName();
+		return $control->lookupPath(Form::class, false) ?? (string) $control->getName();
 	}
 
 	public static function label(BaseControl $control): string
@@ -268,7 +268,10 @@ final class FormReader
 	 */
 	private static function skip(Control $control): bool
 	{
-		return $control instanceof Button
+		// pole odebrané z formuláře (`removeComponent()`) zůstává v ControlGroup — For Baby tak odebírá
+		// zaokrouhlení balení u produktu a popis formuláře na něm padal (Component … is not attached)
+		return ($control instanceof BaseControl && $control->lookup(Form::class, false) === null)
+			|| $control instanceof Button
 			|| $control instanceof HiddenField
 			|| ($control instanceof BaseControl && $control->getName() === \Forms\Form::MUTATION_SELECTOR_NAME);
 	}
